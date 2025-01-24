@@ -1,5 +1,4 @@
-import type { AstroConfig } from '../../@types/astro';
-import type { AstroErrorPayload } from './dev/vite';
+import type { AstroErrorPayload } from './dev/vite.js';
 
 const style = /* css */ `
 * {
@@ -63,22 +62,22 @@ const style = /* css */ `
 
     /* Theme toggle */
     --toggle-ball-color: var(--accent);
-    --toggle-tabel-background: var(--background);
+    --toggle-table-background: var(--background);
     --sun-icon-color: #ffffff;
     --moon-icon-color: #a3acc8;
     --toggle-border-color: #C3CADB;
 
   /* Syntax Highlighting */
-  --shiki-color-text: #000000;
-  --shiki-token-constant: #4ca48f;
-  --shiki-token-string: #9f722a;
-  --shiki-token-comment: #8490b5;
-  --shiki-token-keyword: var(--accent);
-  --shiki-token-parameter: #aa0000;
-  --shiki-token-function: #4ca48f;
-  --shiki-token-string-expression: #9f722a;
-  --shiki-token-punctuation: #ffffff;
-  --shiki-token-link: #9f722a;
+  --astro-code-foreground: #000000;
+  --astro-code-token-constant: #4ca48f;
+  --astro-code-token-string: #9f722a;
+  --astro-code-token-comment: #8490b5;
+  --astro-code-token-keyword: var(--accent);
+  --astro-code-token-parameter: #aa0000;
+  --astro-code-token-function: #4ca48f;
+  --astro-code-token-string-expression: #9f722a;
+  --astro-code-token-punctuation: #000000;
+  --astro-code-token-link: #9f722a;
 }
 
 :host(.astro-dark) {
@@ -122,16 +121,16 @@ const style = /* css */ `
   --toggle-border-color: #3D4663;
 
   /* Syntax Highlighting */
-  --shiki-color-text: #ffffff;
-  --shiki-token-constant: #90f4e3;
-  --shiki-token-string: #f4cf90;
-  --shiki-token-comment: #8490b5;
-  --shiki-token-keyword: var(--accent);
-  --shiki-token-parameter: #aa0000;
-  --shiki-token-function: #90f4e3;
-  --shiki-token-string-expression: #f4cf90;
-  --shiki-token-punctuation: #ffffff;
-  --shiki-token-link: #f4cf90;
+  --astro-code-foreground: #ffffff;
+  --astro-code-token-constant: #90f4e3;
+  --astro-code-token-string: #f4cf90;
+  --astro-code-token-comment: #8490b5;
+  --astro-code-token-keyword: var(--accent);
+  --astro-code-token-parameter: #aa0000;
+  --astro-code-token-function: #90f4e3;
+  --astro-code-token-string-expression: #f4cf90;
+  --astro-code-token-punctuation: #ffffff;
+  --astro-code-token-link: #f4cf90;
 }
 
 #theme-toggle-wrapper{
@@ -151,7 +150,7 @@ const style = /* css */ `
 }
 
 #theme-toggle-label {
-	background-color: var(--toggle-tabel-background);
+	background-color: var(--toggle-table-background);
 	border-radius: 50px;
 	cursor: pointer;
 	display: flex;
@@ -337,7 +336,7 @@ const style = /* css */ `
 #message-content,
 #hint-content {
   white-space: pre-wrap;
-  line-height: 24px;
+  line-height: 26px;
   flex-grow: 1;
 }
 
@@ -370,7 +369,7 @@ const style = /* css */ `
 #message-hints code {
   font-family: var(--font-monospace);
   background-color: var(--border);
-  padding: 4px;
+  padding: 2px 4px;
   border-radius: var(--roundiness);
 	white-space: nowrap;
 }
@@ -594,13 +593,15 @@ class ErrorOverlay extends HTMLElement {
 				window.matchMedia('(prefers-color-scheme: dark)').matches)
 		) {
 			this?.classList.add('astro-dark');
+			localStorage.astroErrorOverlayTheme = 'dark';
 			themeToggle!.checked = true;
 		} else {
 			this?.classList.remove('astro-dark');
 			themeToggle!.checked = false;
 		}
 		themeToggle?.addEventListener('click', () => {
-			const isDark = localStorage.astroErrorOverlayTheme === 'dark';
+			const isDark =
+				localStorage.astroErrorOverlayTheme === 'dark' || this?.classList.contains('astro-dark');
 			this?.classList.toggle('astro-dark', !isDark);
 			localStorage.astroErrorOverlayTheme = isDark ? 'light' : 'dark';
 		});
@@ -632,7 +633,7 @@ class ErrorOverlay extends HTMLElement {
 		}
 
 		const code = this.root.querySelector<HTMLElement>('#code');
-		if (code && err.loc.file) {
+		if (code && err.loc?.file) {
 			code.style.display = 'block';
 			const codeHeader = code.querySelector<HTMLHeadingElement>('#code header');
 			const codeContent = code.querySelector<HTMLDivElement>('#code-content');
@@ -665,18 +666,18 @@ class ErrorOverlay extends HTMLElement {
 					const errorLine = this.root.querySelector<HTMLSpanElement>('.error-line');
 
 					if (errorLine) {
-						if (errorLine.parentElement && errorLine.parentElement.parentElement) {
+						if (errorLine.parentElement?.parentElement) {
 							errorLine.parentElement.parentElement.scrollTop =
 								errorLine.offsetTop - errorLine.parentElement.parentElement.offsetTop - 8;
 						}
 
 						// Add an empty line below the error line so we can show a caret under the error
-						if (err.loc.column) {
+						if (err.loc?.column) {
 							errorLine.insertAdjacentHTML(
 								'afterend',
 								`\n<span class="line error-caret"><span style="padding-left:${
 									err.loc.column - 1
-								}ch;">^</span></span>`
+								}ch;">^</span></span>`,
 							);
 						}
 					}
@@ -694,6 +695,10 @@ class ErrorOverlay extends HTMLElement {
 
 		const el = this.root.querySelector(selector);
 
+		if (!el) {
+			return;
+		}
+
 		if (html) {
 			// Automatically detect links
 			text = text
@@ -705,14 +710,10 @@ class ErrorOverlay extends HTMLElement {
 					return `<a target="_blank" href="${v}">${v}</a>`;
 				})
 				.join(' ');
-		}
 
-		if (el) {
-			if (!html) {
-				el.textContent = text.trim();
-			} else {
-				el.innerHTML = text.trim();
-			}
+			el.innerHTML = text.trim();
+		} else {
+			el.textContent = text.trim();
 		}
 	}
 
@@ -745,6 +746,6 @@ function getOverlayCode() {
 	`;
 }
 
-export function patchOverlay(code: string, config: AstroConfig) {
+export function patchOverlay(code: string) {
 	return code.replace('class ErrorOverlay', getOverlayCode() + '\nclass ViteErrorOverlay');
 }

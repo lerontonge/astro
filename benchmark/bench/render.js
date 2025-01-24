@@ -1,18 +1,16 @@
-import fs from 'fs/promises';
-import http from 'http';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { execaCommand } from 'execa';
-import { waitUntilBusy } from 'port-authority';
+import fs from 'node:fs/promises';
+import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { markdownTable } from 'markdown-table';
-import { renderFiles } from '../make-project/render-default.js';
-import { astroBin } from './_util.js';
+import { waitUntilBusy } from 'port-authority';
+import { exec } from 'tinyexec';
+import { renderPages } from '../make-project/render-default.js';
+import { astroBin, calculateStat } from './_util.js';
 
 const port = 4322;
 
 export const defaultProject = 'render-default';
-
-/** @typedef {{ avg: number, stdev: number, max: number }} Stat */
 
 /**
  * @param {URL} projectDir
@@ -22,15 +20,21 @@ export async function run(projectDir, outputFile) {
 	const root = fileURLToPath(projectDir);
 
 	console.log('Building...');
-	await execaCommand(`${astroBin} build`, {
-		cwd: root,
-		stdio: 'inherit',
+	await exec(astroBin, ['build'], {
+		nodeOptions: {
+			cwd: root,
+			stdio: 'inherit',
+		},
+		throwOnError: true,
 	});
 
 	console.log('Previewing...');
-	const previewProcess = execaCommand(`${astroBin} preview --port ${port}`, {
-		cwd: root,
-		stdio: 'inherit',
+	const previewProcess = exec(astroBin, ['preview', '--port', port], {
+		nodeOptions: {
+			cwd: root,
+			stdio: 'inherit',
+		},
+		throwOnError: true,
 	});
 
 	console.log('Waiting for server ready...');
@@ -56,34 +60,29 @@ export async function run(projectDir, outputFile) {
 	console.log('Done!');
 }
 
-async function benchmarkRenderTime() {
+export async function benchmarkRenderTime(portToListen = port) {
 	/** @type {Record<string, number[]>} */
 	const result = {};
-	for (const fileName of Object.keys(renderFiles)) {
+	for (const fileName of renderPages) {
 		// Render each file 100 times and push to an array
 		for (let i = 0; i < 100; i++) {
 			const pathname = '/' + fileName.slice(0, -path.extname(fileName).length);
-			const renderTime = await fetchRenderTime(`http://localhost:${port}${pathname}`);
+			const renderTime = await fetchRenderTime(`http://localhost:${portToListen}${pathname}`);
 			if (!result[pathname]) result[pathname] = [];
 			result[pathname].push(renderTime);
 		}
 	}
-	/** @type {Record<string, Stat>} */
+	/** @type {Record<string, import('./_util.js').Stat>} */
 	const processedResult = {};
 	for (const [pathname, times] of Object.entries(result)) {
 		// From the 100 results, calculate average, standard deviation, and max value
-		const avg = times.reduce((a, b) => a + b, 0) / times.length;
-		const stdev = Math.sqrt(
-			times.map((x) => Math.pow(x - avg, 2)).reduce((a, b) => a + b, 0) / times.length
-		);
-		const max = Math.max(...times);
-		processedResult[pathname] = { avg, stdev, max };
+		processedResult[pathname] = calculateStat(times);
 	}
 	return processedResult;
 }
 
 /**
- * @param {Record<string, Stat>} result
+ * @param {Record<string, import('./_util.js').Stat>} result
  */
 function printResult(result) {
 	return markdownTable(
@@ -98,7 +97,7 @@ function printResult(result) {
 		],
 		{
 			align: ['l', 'r', 'r', 'r'],
-		}
+		},
 	);
 }
 

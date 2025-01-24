@@ -1,6 +1,8 @@
-import { prepareTestFactory } from './shared-component-tests.js';
 import { expect } from '@playwright/test';
-const { test, createTests } = prepareTestFactory({ root: './fixtures/vue-component/' });
+import { prepareTestFactory } from './shared-component-tests.js';
+const { test, createTests } = prepareTestFactory(import.meta.url, {
+	root: './fixtures/vue-component/',
+});
 
 const config = {
 	componentFilePath: './src/components/VueComponent.vue',
@@ -38,4 +40,17 @@ test('test the async vue component in mdx', async ({ page, astro }) => {
 	const label = page.locator('#client-test');
 
 	await expect(label, 'component not hydrated').toHaveText('2');
+});
+
+test('hmr works', async ({ page, astro }) => {
+	await page.goto(astro.resolveUrl('/'));
+
+	const span = page.locator('#state');
+	await expect(span).toHaveText('Count is 1');
+
+	await astro.editFile('./src/components/State.vue', (content) =>
+		content.replace('ref(1)', 'ref(2)'),
+	);
+
+	await expect(span).toHaveText('Count is 2');
 });

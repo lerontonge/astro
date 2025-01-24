@@ -1,18 +1,23 @@
 import type {
-	GetStaticPathsResult,
 	Page,
 	PaginateFunction,
+	PaginateOptions,
 	Params,
 	Props,
-	RouteData,
-} from '../../@types/astro';
+} from '../../types/public/common.js';
+import type { AstroConfig } from '../../types/public/index.js';
+import type { RouteData } from '../../types/public/internal.js';
 import { AstroError, AstroErrorData } from '../errors/index.js';
+import { joinPaths } from '../path.js';
 
-export function generatePaginateFunction(routeMatch: RouteData): PaginateFunction {
+export function generatePaginateFunction(
+	routeMatch: RouteData,
+	base: AstroConfig['base'],
+): (...args: Parameters<PaginateFunction>) => ReturnType<PaginateFunction> {
 	return function paginateUtility(
 		data: any[],
-		args: { pageSize?: number; params?: Params; props?: Props } = {}
-	) {
+		args: PaginateOptions<Props, Params> = {},
+	): ReturnType<PaginateFunction> {
 		let { pageSize: _pageSize, params: _params, props: _props } = args;
 		const pageSize = _pageSize || 10;
 		const paramName = 'page';
@@ -31,7 +36,7 @@ export function generatePaginateFunction(routeMatch: RouteData): PaginateFunctio
 		}
 		const lastPage = Math.max(1, Math.ceil(data.length / pageSize));
 
-		const result: GetStaticPathsResult = [...Array(lastPage).keys()].map((num) => {
+		const result = [...Array(lastPage).keys()].map((num) => {
 			const pageNum = num + 1;
 			const start = pageSize === Infinity ? 0 : (pageNum - 1) * pageSize; // currentPage is 1-indexed
 			const end = Math.min(start + pageSize, data.length);
@@ -39,21 +44,36 @@ export function generatePaginateFunction(routeMatch: RouteData): PaginateFunctio
 				...additionalParams,
 				[paramName]: includesFirstPageNumber || pageNum > 1 ? String(pageNum) : undefined,
 			};
-			const current = correctIndexRoute(routeMatch.generate({ ...params }));
+			const current = addRouteBase(routeMatch.generate({ ...params }), base);
 			const next =
 				pageNum === lastPage
 					? undefined
-					: correctIndexRoute(routeMatch.generate({ ...params, page: String(pageNum + 1) }));
+					: addRouteBase(routeMatch.generate({ ...params, page: String(pageNum + 1) }), base);
 			const prev =
 				pageNum === 1
 					? undefined
-					: correctIndexRoute(
+					: addRouteBase(
 							routeMatch.generate({
 								...params,
 								page:
 									!includesFirstPageNumber && pageNum - 1 === 1 ? undefined : String(pageNum - 1),
-							})
-					  );
+							}),
+							base,
+						);
+			const first =
+				pageNum === 1
+					? undefined
+					: addRouteBase(
+							routeMatch.generate({
+								...params,
+								page: includesFirstPageNumber ? '1' : undefined,
+							}),
+							base,
+						);
+			const last =
+				pageNum === lastPage
+					? undefined
+					: addRouteBase(routeMatch.generate({ ...params, page: String(lastPage) }), base);
 			return {
 				params,
 				props: {
@@ -66,7 +86,7 @@ export function generatePaginateFunction(routeMatch: RouteData): PaginateFunctio
 						total: data.length,
 						currentPage: pageNum,
 						lastPage: lastPage,
-						url: { current, next, prev },
+						url: { current, next, prev, first, last },
 					} as Page,
 				},
 			};
@@ -75,12 +95,11 @@ export function generatePaginateFunction(routeMatch: RouteData): PaginateFunctio
 	};
 }
 
-function correctIndexRoute(route: string) {
+function addRouteBase(route: string, base: AstroConfig['base']) {
 	// `routeMatch.generate` avoids appending `/`
 	// unless `trailingSlash: 'always'` is configured.
 	// This means an empty string is possible for the index route.
-	if (route === '') {
-		return '/';
-	}
-	return route;
+	let routeWithBase = joinPaths(base, route);
+	if (routeWithBase === '') routeWithBase = '/';
+	return routeWithBase;
 }

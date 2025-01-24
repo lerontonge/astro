@@ -1,24 +1,26 @@
 import type { z } from 'astro/zod';
-import type { RSSOptions } from './index';
+import type { RSSOptions } from './index.js';
 
 /** Normalize URL to its canonical form */
 export function createCanonicalURL(
 	url: string,
 	trailingSlash?: RSSOptions['trailingSlash'],
-	base?: string
-): URL {
+	base?: string,
+): string {
 	let pathname = url.replace(/\/index.html$/, ''); // index.html is not canonical
-	pathname = pathname.replace(/\/1\/?$/, ''); // neither is a trailing /1/ (impl. detail of collections)
-	if (trailingSlash === false) {
-		// remove the trailing slash
-		pathname = pathname.replace(/(\/+)?$/, '');
-	} else if (!getUrlExtension(url)) {
+	if (!getUrlExtension(url)) {
 		// add trailing slash if there’s no extension or `trailingSlash` is true
-		pathname = pathname.replace(/(\/+)?$/, '/');
+		pathname = pathname.replace(/\/*$/, '/');
 	}
 
 	pathname = pathname.replace(/\/+/g, '/'); // remove duplicate slashes (URL() won’t)
-	return new URL(pathname, base);
+
+	const canonicalUrl = new URL(pathname, base).href;
+	if (trailingSlash === false) {
+		// remove the trailing slash
+		return canonicalUrl.replace(/\/*$/, '');
+	}
+	return canonicalUrl;
 }
 
 /** Check if a URL is already valid */
@@ -26,7 +28,7 @@ export function isValidURL(url: string): boolean {
 	try {
 		new URL(url);
 		return true;
-	} catch (e) {}
+	} catch {}
 	return false;
 }
 

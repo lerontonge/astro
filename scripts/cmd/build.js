@@ -1,10 +1,7 @@
-import { deleteAsync } from 'del';
+import fs from 'node:fs/promises';
 import esbuild from 'esbuild';
-import { copy } from 'esbuild-plugin-copy';
-import { promises as fs } from 'fs';
+import glob from 'fast-glob';
 import { dim, green, red, yellow } from 'kleur/colors';
-import glob from 'tiny-glob';
-import svelte from '../utils/svelte-plugin.js';
 import prebuild from './prebuild.js';
 
 /** @type {import('esbuild').BuildOptions} */
@@ -12,7 +9,7 @@ const defaultConfig = {
 	minify: false,
 	format: 'esm',
 	platform: 'node',
-	target: 'node16',
+	target: 'node18',
 	sourcemap: false,
 	sourcesContent: false,
 };
@@ -44,22 +41,20 @@ export default async function build(...args) {
 		.map((f) => f.replace(/^'/, '').replace(/'$/, '')); // Needed for Windows: glob strings contain surrounding string chars??? remove these
 	let entryPoints = [].concat(
 		...(await Promise.all(
-			patterns.map((pattern) => glob(pattern, { filesOnly: true, absolute: true }))
-		))
+			patterns.map((pattern) => glob(pattern, { filesOnly: true, absolute: true })),
+		)),
 	);
 
 	const noClean = args.includes('--no-clean-dist');
 	const bundle = args.includes('--bundle');
 	const forceCJS = args.includes('--force-cjs');
-	const copyWASM = args.includes('--copy-wasm');
 
-	const {
-		type = 'module',
-		version,
-		dependencies = {},
-	} = await fs.readFile('./package.json').then((res) => JSON.parse(res.toString()));
-	// expose PACKAGE_VERSION on process.env for CLI utils
-	config.define = { 'process.env.PACKAGE_VERSION': JSON.stringify(version) };
+	const { type = 'module', dependencies = {} } = await readPackageJSON('./package.json');
+
+	config.define = {};
+	for (const [key, value] of await getDefinedEntries()) {
+		config.define[`process.env.${key}`] = JSON.stringify(value);
+	}
 	const format = type === 'module' && !forceCJS ? 'esm' : 'cjs';
 
 	const outdir = 'dist';
@@ -93,11 +88,11 @@ export default async function build(...args) {
 					console.error(dim(`[${date}] `) + red(error || result.errors.join('\n')));
 				} else {
 					if (result.warnings.length) {
-						console.log(
-							dim(`[${date}] `) + yellow('⚠ updated with warnings:\n' + result.warnings.join('\n'))
+						console.info(
+							dim(`[${date}] `) + yellow('! updated with warnings:\n' + result.warnings.join('\n')),
 						);
 					}
-					console.log(dim(`[${date}] `) + green('✔ updated'));
+					console.info(dim(`[${date}] `) + green('√ updated'));
 				}
 			});
 		},
@@ -108,21 +103,8 @@ export default async function build(...args) {
 		entryPoints,
 		outdir,
 		format,
-		plugins: [
-			rebuildPlugin,
-			svelte({ isDev }),
-			...(copyWASM
-				? [
-						copy({
-							resolveFrom: 'cwd',
-							assets: {
-								from: ['./src/assets/services/vendor/squoosh/**/*.wasm'],
-								to: ['./dist/assets/services/vendor/squoosh'],
-							},
-						}),
-				  ]
-				: []),
-		],
+		sourcemap: 'linked',
+		plugins: [rebuildPlugin],
 	});
 
 	await builder.watch();
@@ -133,5 +115,53 @@ export default async function build(...args) {
 }
 
 async function clean(outdir) {
-	return deleteAsync([`${outdir}/**`, `!${outdir}/**/*.d.ts`]);
+	const files = await glob([`${outdir}/**`, `!${outdir}/**/*.d.ts`], { filesOnly: true });
+	await Promise.all(files.map((file) => fs.rm(file, { force: true })));
+}
+
+/**
+ * Contextual `define` values to statically replace in the built JS output.
+ * Available to all packages, but mostly useful for CLIs like `create-astro`.
+ */
+async function getDefinedEntries() {
+	const define = {
+		/** The current version (at the time of building) for the current package, such as `astro` or `@astrojs/sitemap` */
+		PACKAGE_VERSION: await getInternalPackageVersion('./package.json'),
+		/** The current version (at the time of building) for `astro` */
+		ASTRO_VERSION: await getInternalPackageVersion(
+			new URL('../../packages/astro/package.json', import.meta.url),
+		),
+		/** The current version (at the time of building) for `@astrojs/check` */
+		ASTRO_CHECK_VERSION: await getWorkspacePackageVersion('@astrojs/check'),
+		/** The current version (at the time of building) for `typescript` */
+		TYPESCRIPT_VERSION: await getWorkspacePackageVersion('typescript'),
+	};
+	for (const [key, value] of Object.entries(define)) {
+		if (value === undefined) {
+			delete define[key];
+		}
+	}
+	return Object.entries(define);
+}
+
+async function readPackageJSON(path) {
+	return await fs.readFile(path, { encoding: 'utf8' }).then((res) => JSON.parse(res));
+}
+
+async function getInternalPackageVersion(path) {
+	return readPackageJSON(path).then((res) => res.version);
+}
+
+async function getWorkspacePackageVersion(packageName) {
+	const { dependencies, devDependencies } = await readPackageJSON(
+		new URL('../../package.json', import.meta.url),
+	);
+	const deps = { ...dependencies, ...devDependencies };
+	const version = deps[packageName];
+	if (!version) {
+		throw new Error(
+			`Unable to resolve "${packageName}". Is it a dependency of the workspace root?`,
+		);
+	}
+	return version.replace(/^\D+/, '');
 }

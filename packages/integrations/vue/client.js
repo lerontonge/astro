@@ -1,10 +1,12 @@
-import { h, createSSRApp, createApp, Suspense } from 'vue';
 import { setup } from 'virtual:@astrojs/vue/app';
+import { Suspense, createApp, createSSRApp, h } from 'vue';
 import StaticHtml from './static-html.js';
+
+// keep track of already initialized apps, so we don't hydrate again for view transitions
+let appMap = new WeakMap();
 
 export default (element) =>
 	async (Component, props, slotted, { client }) => {
-		delete props['class'];
 		if (!element.hasAttribute('ssr')) return;
 
 		// Expose name on host component for Vue devtools
@@ -14,21 +16,39 @@ export default (element) =>
 			slots[key] = () => h(StaticHtml, { value, name: key === 'default' ? undefined : key });
 		}
 
-		let content = h(Component, props, slots);
-		// related to https://github.com/withastro/astro/issues/6549
-		// if the component is async, wrap it in a Suspense component
-		if (isAsync(Component.setup)) {
-			content = h(Suspense, null, content);
-		}
+		const isHydrate = client !== 'only';
+		const bootstrap = isHydrate ? createSSRApp : createApp;
 
-		if (client === 'only') {
-			const app = createApp({ name, render: () => content });
+		// keep a reference to the app, props and slots so we can update a running instance later
+		let appInstance = appMap.get(element);
+
+		if (!appInstance) {
+			appInstance = {
+				props,
+				slots,
+			};
+			const app = bootstrap({
+				name,
+				render() {
+					let content = h(Component, appInstance.props, appInstance.slots);
+					appInstance.component = this;
+					// related to https://github.com/withastro/astro/issues/6549
+					// if the component is async, wrap it in a Suspense component
+					if (isAsync(Component.setup)) {
+						content = h(Suspense, null, content);
+					}
+					return content;
+				},
+			});
+			app.config.idPrefix = element.getAttribute('prefix');
 			await setup(app);
-			app.mount(element, false);
+			app.mount(element, isHydrate);
+			appMap.set(element, appInstance);
+			element.addEventListener('astro:unmount', () => app.unmount(), { once: true });
 		} else {
-			const app = createSSRApp({ name, render: () => content });
-			await setup(app);
-			app.mount(element, true);
+			appInstance.props = props;
+			appInstance.slots = slots;
+			appInstance.component.$forceUpdate();
 		}
 	};
 

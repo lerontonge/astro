@@ -1,25 +1,16 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { appendForwardSlash } from '../path.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const isWindows = process.platform === 'win32';
 
-/** An fs utility, similar to `rimraf` or `rm -rf` */
-export function removeDir(_dir: URL): void {
-	const dir = fileURLToPath(_dir);
-	fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
-}
-
-export function removeEmptyDirs(root: URL): void {
-	const dir = fileURLToPath(root);
+export function removeEmptyDirs(dir: string): void {
 	if (!fs.statSync(dir).isDirectory()) return;
 	let files = fs.readdirSync(dir);
 
 	if (files.length > 0) {
 		files.map((file) => {
-			const url = new URL(`./${file}`, appendForwardSlash(root.toString()));
-			removeEmptyDirs(url);
+			removeEmptyDirs(path.join(dir, file));
 		});
 		files = fs.readdirSync(dir);
 	}
@@ -63,7 +54,7 @@ export function emptyDir(_dir: URL, skip?: Set<string>): void {
  * Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
 copyright notice and this permission notice appear in all copies.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR

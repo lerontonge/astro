@@ -1,13 +1,23 @@
-(self.Astro = self.Astro || {}).idle = (getHydrateCallback) => {
+import type { ClientDirective } from '../../types/public/integrations.js';
+
+const idleDirective: ClientDirective = (load, options) => {
 	const cb = async () => {
-		let hydrate = await getHydrateCallback();
+		const hydrate = await load();
 		await hydrate();
 	};
 
+	const rawOptions =
+		typeof options.value === 'object' ? (options.value as IdleRequestOptions) : undefined;
+
+	const idleOptions: IdleRequestOptions = {
+		timeout: rawOptions?.timeout,
+	};
+
 	if ('requestIdleCallback' in window) {
-		(window as any).requestIdleCallback(cb);
+		(window as any).requestIdleCallback(cb, idleOptions);
 	} else {
-		setTimeout(cb, 200);
+		setTimeout(cb, idleOptions.timeout || 200);
 	}
 };
-window.dispatchEvent(new Event('astro:idle'));
+
+export default idleDirective;

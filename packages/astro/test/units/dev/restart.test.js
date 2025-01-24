@@ -1,23 +1,27 @@
-import { expect } from 'chai';
+import * as assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import * as cheerio from 'cheerio';
-import { fileURLToPath } from 'url';
 
 import {
 	createContainerWithAutomaticRestart,
-	isStarted,
 	startContainer,
 } from '../../../dist/core/dev/index.js';
-import { createFs, createRequestAndResponse, triggerFSEvent } from '../test-utils.js';
-import { createSettings, openConfig } from '../../../dist/core/config/index.js';
-import { defaultLogging } from '../../test-utils.js';
+import { createFixture, createRequestAndResponse } from '../test-utils.js';
 
-const root = new URL('../../fixtures/alias/', import.meta.url);
+/** @type {import('astro').AstroInlineConfig} */
+const defaultInlineConfig = {
+	logLevel: 'silent',
+};
 
-describe('dev container restarts', () => {
+function isStarted(container) {
+	return !!container.viteServer.httpServer?.listening;
+}
+
+// Checking for restarts may hang if no restarts happen, so set a 20s timeout for each test
+describe('dev container restarts', { timeout: 20000 }, () => {
 	it('Surfaces config errors on restarts', async () => {
-		const fs = createFs(
-			{
-				'/src/pages/index.astro': `
+		const fixture = await createFixture({
+			'/src/pages/index.astro': `
 				<html>
 					<head><title>Test</title></head>
 					<body>
@@ -25,15 +29,14 @@ describe('dev container restarts', () => {
 					</body>
 				</html>
 			`,
-				'/astro.config.mjs': `
-				
-				`,
-			},
-			root
-		);
+			'/astro.config.mjs': ``,
+		});
 
-		let restart = await createContainerWithAutomaticRestart({
-			params: { fs, root },
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
 		});
 
 		try {
@@ -44,45 +47,42 @@ describe('dev container restarts', () => {
 			restart.container.handle(r.req, r.res);
 			let html = await r.text();
 			const $ = cheerio.load(html);
-			expect(r.res.statusCode).to.equal(200);
-			expect($('h1')).to.have.a.lengthOf(1);
+			assert.equal(r.res.statusCode, 200);
+			assert.equal($('h1').length, 1);
 
 			// Create an error
 			let restartComplete = restart.restarted();
-			fs.writeFileFromRootSync('/astro.config.mjs', 'const foo = bar');
-
-			// Vite watches the real filesystem, so we have to mock this part. It's not so bad.
+			await fixture.writeFile('/astro.config.mjs', 'const foo = bar');
+			// TODO: fix this hack
 			restart.container.viteServer.watcher.emit(
 				'change',
-				fs.getFullyResolvedPath('/astro.config.mjs')
+				fixture.getPath('/astro.config.mjs').replace(/\\/g, '/'),
 			);
 
 			// Wait for the restart to finish
 			let hmrError = await restartComplete;
-			expect(hmrError).to.not.be.a('undefined');
+			assert.ok(hmrError instanceof Error);
 
 			// Do it a second time to make sure we are still watching
 
 			restartComplete = restart.restarted();
-			fs.writeFileFromRootSync('/astro.config.mjs', 'const foo = bar2');
-
-			// Vite watches the real filesystem, so we have to mock this part. It's not so bad.
+			await fixture.writeFile('/astro.config.mjs', 'const foo = bar2');
+			// TODO: fix this hack
 			restart.container.viteServer.watcher.emit(
 				'change',
-				fs.getFullyResolvedPath('/astro.config.mjs')
+				fixture.getPath('/astro.config.mjs').replace(/\\/g, '/'),
 			);
 
 			hmrError = await restartComplete;
-			expect(hmrError).to.not.be.a('undefined');
+			assert.ok(hmrError instanceof Error);
 		} finally {
 			await restart.container.close();
 		}
 	});
 
 	it('Restarts the container if previously started', async () => {
-		const fs = createFs(
-			{
-				'/src/pages/index.astro': `
+		const fixture = await createFixture({
+			'/src/pages/index.astro': `
 				<html>
 					<head><title>Test</title></head>
 					<body>
@@ -90,91 +90,89 @@ describe('dev container restarts', () => {
 					</body>
 				</html>
 			`,
-				'/astro.config.mjs': ``,
-			},
-			root
-		);
+			'/astro.config.mjs': ``,
+		});
 
-		let restart = await createContainerWithAutomaticRestart({
-			params: { fs, root },
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
 		});
 		await startContainer(restart.container);
-		expect(isStarted(restart.container)).to.equal(true);
+		assert.equal(isStarted(restart.container), true);
 
 		try {
 			// Trigger a change
 			let restartComplete = restart.restarted();
-			triggerFSEvent(restart.container, fs, '/astro.config.mjs', 'change');
+			await fixture.writeFile('/astro.config.mjs', '');
+			// TODO: fix this hack
+			restart.container.viteServer.watcher.emit(
+				'change',
+				fixture.getPath('/astro.config.mjs').replace(/\\/g, '/'),
+			);
 			await restartComplete;
 
-			expect(isStarted(restart.container)).to.equal(true);
+			assert.equal(isStarted(restart.container), true);
 		} finally {
 			await restart.container.close();
 		}
 	});
 
 	it('Is able to restart project using Tailwind + astro.config.ts', async () => {
-		const troot = new URL('../../fixtures/tailwindcss-ts/', import.meta.url);
-		const fs = createFs(
-			{
-				'/src/pages/index.astro': ``,
-				'/astro.config.ts': ``,
-			},
-			troot
-		);
-
-		const { astroConfig } = await openConfig({
-			cwd: troot,
-			flags: {},
-			cmd: 'dev',
-			logging: defaultLogging,
+		const fixture = await createFixture({
+			'/src/pages/index.astro': ``,
+			'/astro.config.ts': ``,
 		});
-		const settings = createSettings(astroConfig);
 
-		let restart = await createContainerWithAutomaticRestart({
-			params: { fs, root, settings },
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
 		});
 		await startContainer(restart.container);
-		expect(isStarted(restart.container)).to.equal(true);
+		assert.equal(isStarted(restart.container), true);
 
 		try {
 			// Trigger a change
 			let restartComplete = restart.restarted();
-			triggerFSEvent(restart.container, fs, '/astro.config.ts', 'change');
+			await fixture.writeFile('/astro.config.ts', '');
+			// TODO: fix this hack
+			restart.container.viteServer.watcher.emit(
+				'change',
+				fixture.getPath('/astro.config.mjs').replace(/\\/g, '/'),
+			);
 			await restartComplete;
 
-			expect(isStarted(restart.container)).to.equal(true);
+			assert.equal(isStarted(restart.container), true);
 		} finally {
 			await restart.container.close();
 		}
 	});
 
 	it('Is able to restart project on package.json changes', async () => {
-		const fs = createFs(
-			{
-				'/src/pages/index.astro': ``,
-			},
-			root
-		);
-
-		const { astroConfig } = await openConfig({
-			cwd: root,
-			flags: {},
-			cmd: 'dev',
-			logging: defaultLogging,
+		const fixture = await createFixture({
+			'/src/pages/index.astro': ``,
 		});
-		const settings = createSettings(astroConfig, fileURLToPath(root));
 
-		let restart = await createContainerWithAutomaticRestart({
-			params: { fs, root, settings },
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
 		});
 		await startContainer(restart.container);
-		expect(isStarted(restart.container)).to.equal(true);
+		assert.equal(isStarted(restart.container), true);
 
 		try {
 			let restartComplete = restart.restarted();
-			fs.writeFileSync('/package.json', `{}`);
-			triggerFSEvent(restart.container, fs, '/package.json', 'change');
+			await fixture.writeFile('/package.json', `{}`);
+			// TODO: fix this hack
+			restart.container.viteServer.watcher.emit(
+				'change',
+				fixture.getPath('/package.json').replace(/\\/g, '/'),
+			);
 			await restartComplete;
 		} finally {
 			await restart.container.close();
@@ -182,30 +180,51 @@ describe('dev container restarts', () => {
 	});
 
 	it('Is able to restart on viteServer.restart API call', async () => {
-		const fs = createFs(
-			{
-				'/src/pages/index.astro': ``,
-			},
-			root
-		);
-
-		const { astroConfig } = await openConfig({
-			cwd: root,
-			flags: {},
-			cmd: 'dev',
-			logging: defaultLogging,
+		const fixture = await createFixture({
+			'/src/pages/index.astro': ``,
 		});
-		const settings = createSettings(astroConfig, fileURLToPath(root));
 
-		let restart = await createContainerWithAutomaticRestart({
-			params: { fs, root, settings },
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
 		});
 		await startContainer(restart.container);
-		expect(isStarted(restart.container)).to.equal(true);
+		assert.equal(isStarted(restart.container), true);
 
 		try {
 			let restartComplete = restart.restarted();
 			await restart.container.viteServer.restart();
+			await restartComplete;
+		} finally {
+			await restart.container.close();
+		}
+	});
+
+	it('Is able to restart project on .astro/settings.json changes', async () => {
+		const fixture = await createFixture({
+			'/src/pages/index.astro': ``,
+			'/.astro/settings.json': `{}`,
+		});
+
+		const restart = await createContainerWithAutomaticRestart({
+			inlineConfig: {
+				...defaultInlineConfig,
+				root: fixture.path,
+			},
+		});
+		await startContainer(restart.container);
+		assert.equal(isStarted(restart.container), true);
+
+		try {
+			let restartComplete = restart.restarted();
+			await fixture.writeFile('/.astro/settings.json', `{ }`);
+			// TODO: fix this hack
+			restart.container.viteServer.watcher.emit(
+				'change',
+				fixture.getPath('/.astro/settings.json').replace(/\\/g, '/'),
+			);
 			await restartComplete;
 		} finally {
 			await restart.container.close();
