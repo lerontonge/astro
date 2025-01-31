@@ -1,14 +1,13 @@
-import { expect } from 'chai';
+import * as assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import * as cheerio from 'cheerio';
-
-import { runInContainer } from '../../../dist/core/dev/index.js';
-import { createFs, createRequestAndResponse } from '../test-utils.js';
+import { createFixture, createRequestAndResponse, runInContainer } from '../test-utils.js';
 
 const root = new URL('../../fixtures/alias/', import.meta.url);
 
 describe('head injection', () => {
 	it('Dynamic injection from component created in the page frontmatter', async () => {
-		const fs = createFs(
+		const fixture = await createFixture(
 			{
 				'/src/components/Other.astro': `
 					<style>
@@ -35,7 +34,8 @@ describe('head injection', () => {
 							factory(result, props, slots) {
 								return createHeadAndContent(
 									unescapeHTML(renderUniqueStylesheet(result, {
-										href: '/some/fake/styles.css'
+										type: 'external',
+										src: '/some/fake/styles.css'
 									})),
 									renderTemplate\`$\{renderComponent(result, 'Other', Other, props, slots)}\`
 								);
@@ -58,14 +58,13 @@ describe('head injection', () => {
 					</html>
 				`,
 			},
-			root
+			root,
 		);
 
 		await runInContainer(
 			{
-				fs,
-				root,
-				userConfig: {
+				inlineConfig: {
+					root: fixture.path,
 					vite: { server: { middlewareMode: true } },
 				},
 			},
@@ -79,14 +78,14 @@ describe('head injection', () => {
 				const html = await text();
 				const $ = cheerio.load(html);
 
-				expect($('link[rel=stylesheet][href="/some/fake/styles.css"]')).to.have.a.lengthOf(1);
-				expect($('#other')).to.have.a.lengthOf(1);
-			}
+				assert.equal($('link[rel=stylesheet][href="/some/fake/styles.css"]').length, 1);
+				assert.equal($('#other').length, 1);
+			},
 		);
 	});
 
 	it('Dynamic injection from a layout component', async () => {
-		const fs = createFs(
+		const fixture = await createFixture(
 			{
 				'/src/components/Other.astro': `
 					<style>
@@ -113,7 +112,8 @@ describe('head injection', () => {
 							factory(result, props, slots) {
 								return createHeadAndContent(
 									unescapeHTML(renderUniqueStylesheet(result, {
-										href: '/some/fake/styles.css'
+										type: 'external',
+										src: '/some/fake/styles.css'
 									})),
 									renderTemplate\`$\{renderComponent(result, 'Other', Other, props, slots)}\`
 								);
@@ -122,38 +122,48 @@ describe('head injection', () => {
 						});
 					}
 				`.trim(),
+				'/src/components/Content.astro': `
+				---
+				import { renderEntry } from '../common/head.js';
+				const ExtraHead = renderEntry();
+				---
+				<ExtraHead />
+				`,
+				'/src/components/Inner.astro': `
+				---
+				import Content from './Content.astro';
+				---
+				<Content />
+				`,
 				'/src/components/Layout.astro': `
-					---
-					import { renderEntry } from '../common/head.js';
-					const ExtraHead = renderEntry();
-					---
 					<html>
 						<head>
 							<title>Normal head stuff</title>
 						</head>
 						<body>
 							<slot name="title" />
-							<ExtraHead />
+							<slot name="inner" />
 						</body>
 					</html>
 				`,
 				'/src/pages/index.astro': `
 					---
 					import Layout from '../components/Layout.astro';
+					import Inner from '../components/Inner.astro';
 					---
 					<Layout>
 						<h1 slot="title">Test page</h1>
+						<Inner slot="inner" />
 					</Layout>
 				`,
 			},
-			root
+			root,
 		);
 
 		await runInContainer(
 			{
-				fs,
-				root,
-				userConfig: {
+				inlineConfig: {
+					root: fixture.path,
 					vite: { server: { middlewareMode: true } },
 				},
 			},
@@ -167,9 +177,13 @@ describe('head injection', () => {
 				const html = await text();
 				const $ = cheerio.load(html);
 
-				expect($('link[rel=stylesheet][href="/some/fake/styles.css"]')).to.have.a.lengthOf(1);
-				expect($('#other')).to.have.a.lengthOf(1);
-			}
+				assert.equal(
+					$('link[rel=stylesheet][href="/some/fake/styles.css"]').length,
+					1,
+					'found inner link',
+				);
+				assert.equal($('#other').length, 1, 'Found the #other div');
+			},
 		);
 	});
 });

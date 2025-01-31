@@ -1,4 +1,5 @@
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
+import { before, describe, it } from 'node:test';
 import { loadFixture } from './test-utils.js';
 
 describe('Component bundling', () => {
@@ -12,9 +13,9 @@ describe('Component bundling', () => {
 	it('should treeshake FooComponent', async () => {
 		const astroChunkDir = await fixture.readdir('/_astro');
 		const manyComponentsChunkName = astroChunkDir.find((chunk) =>
-			chunk.startsWith('ManyComponents')
+			chunk.startsWith('ManyComponents'),
 		);
 		const manyComponentsChunkContent = await fixture.readFile(`/_astro/${manyComponentsChunkName}`);
-		expect(manyComponentsChunkContent).to.not.include('FooComponent');
+		assert.equal(manyComponentsChunkContent.includes('FooComponent'), false);
 	});
 });

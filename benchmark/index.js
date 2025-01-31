@@ -1,7 +1,8 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { pathToFileURL } from 'url';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import mri from 'mri';
+import { makeProject } from './bench/_util.js';
 
 const args = mri(process.argv.slice(2));
 
@@ -14,6 +15,7 @@ Command
   memory          Run build memory and speed test
   render          Run rendering speed test
   server-stress   Run server stress test
+  cli-startup     Run CLI startup speed test
 
 Options
   --project <project-name>       Project to use for benchmark, see benchmark/make-project/ for available names
@@ -27,6 +29,7 @@ const benchmarks = {
 	memory: () => import('./bench/memory.js'),
 	render: () => import('./bench/render.js'),
 	'server-stress': () => import('./bench/server-stress.js'),
+	'cli-startup': () => import('./bench/cli-startup.js'),
 };
 
 if (commandName && !(commandName in benchmarks)) {
@@ -52,21 +55,10 @@ if (commandName) {
 	}
 }
 
-async function makeProject(name) {
-	console.log('Making project:', name);
-	const projectDir = new URL(`./projects/${name}/`, import.meta.url);
-
-	const makeProjectMod = await import(`./make-project/${name}.js`);
-	await makeProjectMod.run(projectDir);
-
-	console.log('Finished making project:', name);
-	return projectDir;
-}
-
 /**
  * @param {string} benchmarkName
  */
-async function getOutputFile(benchmarkName) {
+export async function getOutputFile(benchmarkName) {
 	let file;
 	if (args.output) {
 		file = pathToFileURL(path.resolve(args.output));
@@ -76,6 +68,5 @@ async function getOutputFile(benchmarkName) {
 
 	// Prepare output file directory
 	await fs.mkdir(new URL('./', file), { recursive: true });
-
 	return file;
 }

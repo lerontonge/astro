@@ -1,18 +1,21 @@
-import { prompt } from '@astrojs/cli-kit';
-import arg from 'arg';
 import os from 'node:os';
-import detectPackageManager from 'which-pm-runs';
+import { type Task, prompt } from '@astrojs/cli-kit';
+import { random } from '@astrojs/cli-kit/utils';
+import arg from 'arg';
 
+import getSeasonalData from '../data/seasonal.js';
 import { getName, getVersion } from '../messages.js';
 
 export interface Context {
 	help: boolean;
 	prompt: typeof prompt;
 	cwd: string;
-	pkgManager: string;
-	username: string;
-	version: string;
+	packageManager: string;
+	username: Promise<string>;
+	version: Promise<string>;
 	skipHouston: boolean;
+	fancy?: boolean;
+	add?: string[];
 	dryRun?: boolean;
 	yes?: boolean;
 	projectName?: string;
@@ -24,6 +27,10 @@ export interface Context {
 	stdin?: typeof process.stdin;
 	stdout?: typeof process.stdout;
 	exit(code: number): never;
+	welcome?: string;
+	hat?: string;
+	tie?: string;
+	tasks: Task[];
 }
 
 export async function getContext(argv: string[]): Promise<Context> {
@@ -37,22 +44,21 @@ export async function getContext(argv: string[]): Promise<Context> {
 			'--no-install': Boolean,
 			'--git': Boolean,
 			'--no-git': Boolean,
-			'--typescript': String,
 			'--skip-houston': Boolean,
 			'--dry-run': Boolean,
 			'--help': Boolean,
 			'--fancy': Boolean,
+			'--add': [String],
 
 			'-y': '--yes',
 			'-n': '--no',
 			'-h': '--help',
 		},
-		{ argv, permissive: true }
+		{ argv, permissive: true },
 	);
 
-	const pkgManager = detectPackageManager()?.name ?? 'npm';
-	const [username, version] = await Promise.all([getName(), getVersion()]);
-	let cwd = flags['_'][0] as string;
+	const packageManager = detectPackageManager() ?? 'npm';
+	let cwd = flags['_'][0];
 	let {
 		'--help': help = false,
 		'--template': template,
@@ -62,11 +68,11 @@ export async function getContext(argv: string[]): Promise<Context> {
 		'--no-install': noInstall,
 		'--git': git,
 		'--no-git': noGit,
-		'--typescript': typescript,
 		'--fancy': fancy,
 		'--skip-houston': skipHouston,
 		'--dry-run': dryRun,
 		'--ref': ref,
+		'--add': add,
 	} = flags;
 	let projectName = cwd;
 
@@ -74,32 +80,45 @@ export async function getContext(argv: string[]): Promise<Context> {
 		yes = false;
 		if (install == undefined) install = false;
 		if (git == undefined) git = false;
-		if (typescript == undefined) typescript = 'strict';
 	}
 
 	skipHouston =
 		((os.platform() === 'win32' && !fancy) || skipHouston) ??
-		[yes, no, install, git, typescript].some((v) => v !== undefined);
+		[yes, no, install, git].some((v) => v !== undefined);
+
+	const { messages, hats, ties } = getSeasonalData({ fancy });
 
 	const context: Context = {
 		help,
 		prompt,
-		pkgManager,
-		username,
-		version,
+		packageManager,
+		username: getName(),
+		version: getVersion(packageManager, 'astro', process.env.ASTRO_VERSION),
 		skipHouston,
+		fancy,
+		add,
 		dryRun,
 		projectName,
 		template,
 		ref: ref ?? 'latest',
+		welcome: random(messages),
+		hat: hats ? random(hats) : undefined,
+		tie: ties ? random(ties) : undefined,
 		yes,
 		install: install ?? (noInstall ? false : undefined),
 		git: git ?? (noGit ? false : undefined),
-		typescript,
 		cwd,
 		exit(code) {
 			process.exit(code);
 		},
+		tasks: [],
 	};
 	return context;
+}
+
+function detectPackageManager() {
+	if (!process.env.npm_config_user_agent) return;
+	const specifier = process.env.npm_config_user_agent.split(' ')[0];
+	const name = specifier.substring(0, specifier.lastIndexOf('/'));
+	return name === 'npminstall' ? 'cnpm' : name;
 }

@@ -1,4 +1,5 @@
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
+import { after, before, describe, it } from 'node:test';
 import * as cheerio from 'cheerio';
 import { loadFixture } from './test-utils.js';
 
@@ -23,11 +24,11 @@ describe('Projects with a space in the folder name', () => {
 			await devServer.stop();
 		});
 
-		it('Work with hoisted scripts', async () => {
+		it('Work with scripts', async () => {
 			const html = await fixture.fetch('/').then((r) => r.text());
 			const $ = cheerio.load(html);
 
-			expect($('script[src*="/src/pages/index.astro"]')).to.have.a.lengthOf(1);
+			assert.equal($('script[src*="/src/pages/index.astro"]').length, 1);
 		});
 	});
 });

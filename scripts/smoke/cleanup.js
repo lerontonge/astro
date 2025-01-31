@@ -2,12 +2,9 @@
 
 // @ts-check
 
-import { execa } from 'execa';
-import { polyfill } from '@astrojs/webapi';
-import { fileURLToPath } from 'node:url';
+import { exec } from 'tinyexec';
 import { promises as fs } from 'node:fs';
-
-polyfill(globalThis, { exclude: 'window document' });
+import { fileURLToPath } from 'node:url';
 
 /* Configuration
 /* ========================================================================== */
@@ -39,7 +36,10 @@ async function run() {
 
 	console.log('🤖', 'Resetting', 'pnpm');
 
-	await execa('pnpm', ['install'], { cwd: fileURLToPath(rootDir), stdout: 'inherit', stderr: 'inherit' });
+	await exec('pnpm', ['install'], {
+		nodeOptions: { cwd: fileURLToPath(rootDir), stdio: ['pipe', 'inherit', 'inherit'] },
+		throwOnError: true
+	});
 }
 
 /* Functionality

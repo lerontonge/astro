@@ -1,12 +1,12 @@
-import fs from 'fs';
-import path from 'path';
-import slash from 'slash';
-import { fileURLToPath } from 'url';
-import { normalizePath } from 'vite';
-import type { AstroConfig, AstroSettings, RouteType } from '../@types/astro';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { AstroSettings } from '../types/astro.js';
+import type { AstroConfig } from '../types/public/config.js';
+import type { RouteData } from '../types/public/internal.js';
+import { hasSpecialQueries } from '../vite-plugin-utils/index.js';
 import { SUPPORTED_MARKDOWN_FILE_EXTENSIONS } from './constants.js';
-import type { ModuleLoader } from './module-loader';
-import { prependForwardSlash, removeTrailingForwardSlash } from './path.js';
+import { removeQueryString, removeTrailingForwardSlash, slash } from './path.js';
 
 /** Returns true if argument is an object of any prototype/class (but not null). */
 export function isObject(value: unknown): value is Record<string, any> {
@@ -19,9 +19,13 @@ export function isURL(value: unknown): value is URL {
 }
 /** Check if a file is a markdown file based on its extension */
 export function isMarkdownFile(fileId: string, option?: { suffix?: string }): boolean {
+	if (hasSpecialQueries(fileId)) {
+		return false;
+	}
+	const id = removeQueryString(fileId);
 	const _suffix = option?.suffix ?? '';
 	for (let markdownFileExtension of SUPPORTED_MARKDOWN_FILE_EXTENSIONS) {
-		if (fileId.endsWith(`${markdownFileExtension}${_suffix}`)) return true;
+		if (id.endsWith(`${markdownFileExtension}${_suffix}`)) return true;
 	}
 	return false;
 }
@@ -36,21 +40,24 @@ export function padMultilineString(source: string, n = 2) {
 	return lines.map((l) => ` `.repeat(n) + l).join(`\n`);
 }
 
-const REGEXP_404_OR_500_ROUTE = /(404)|(500)\/?$/;
+const STATUS_CODE_PAGES = new Set(['/404', '/500']);
 
 /**
  * Get the correct output filename for a route, based on your config.
  * Handles both "/foo" and "foo" `name` formats.
  * Handles `/404` and `/` correctly.
  */
-export function getOutputFilename(astroConfig: AstroConfig, name: string, type: RouteType) {
-	if (type === 'endpoint') {
+export function getOutputFilename(astroConfig: AstroConfig, name: string, routeData: RouteData) {
+	if (routeData.type === 'endpoint') {
 		return name;
 	}
 	if (name === '/' || name === '') {
 		return path.posix.join(name, 'index.html');
 	}
-	if (astroConfig.build.format === 'file' || REGEXP_404_OR_500_ROUTE.test(name)) {
+	if (astroConfig.build.format === 'file' || STATUS_CODE_PAGES.has(name)) {
+		return `${removeTrailingForwardSlash(name || 'index')}.html`;
+	}
+	if (astroConfig.build.format === 'preserve' && !routeData.isIndex) {
 		return `${removeTrailingForwardSlash(name || 'index')}.html`;
 	}
 	return path.posix.join(name, 'index.html');
@@ -58,7 +65,7 @@ export function getOutputFilename(astroConfig: AstroConfig, name: string, type: 
 
 /** is a specifier an npm package? */
 export function parseNpmName(
-	spec: string
+	spec: string,
 ): { scope?: string; name: string; subpath?: string } | undefined {
 	// not an npm package
 	if (!spec || spec[0] === '.' || spec[0] === '/') return undefined;
@@ -89,15 +96,18 @@ export function parseNpmName(
  *   Windows:    C:/Users/astro/code/my-project/src/pages/index.astro
  */
 export function viteID(filePath: URL): string {
-	return slash(fileURLToPath(filePath) + filePath.search).replace(/\\/g, '/');
+	return slash(fileURLToPath(filePath) + filePath.search);
 }
 
 export const VALID_ID_PREFIX = `/@id/`;
+export const NULL_BYTE_PLACEHOLDER = `__x00__`;
 
-// Strip valid id prefix. This is prepended to resolved Ids that are
-// not valid browser import specifiers by the importAnalysis plugin.
+// Strip valid id prefix and replace null byte placeholder. Both are prepended to resolved ids
+// as they are not valid browser import specifiers (by the Vite's importAnalysis plugin)
 export function unwrapId(id: string): string {
-	return id.startsWith(VALID_ID_PREFIX) ? id.slice(VALID_ID_PREFIX.length) : id;
+	return id.startsWith(VALID_ID_PREFIX)
+		? id.slice(VALID_ID_PREFIX.length).replace(NULL_BYTE_PLACEHOLDER, '\0')
+		: id;
 }
 
 export function resolvePages(config: AstroConfig) {
@@ -109,12 +119,35 @@ function isInPagesDir(file: URL, config: AstroConfig): boolean {
 	return file.toString().startsWith(pagesDir.toString());
 }
 
+function isInjectedRoute(file: URL, settings: AstroSettings) {
+	let fileURL = file.toString();
+	for (const route of settings.resolvedInjectedRoutes) {
+		if (
+			route.resolvedEntryPoint &&
+			removeQueryString(fileURL) === removeQueryString(route.resolvedEntryPoint.toString())
+		)
+			return true;
+	}
+	return false;
+}
+
 function isPublicRoute(file: URL, config: AstroConfig): boolean {
-	const pagesDir = resolvePages(config);
-	const parts = file.toString().replace(pagesDir.toString(), '').split('/').slice(1);
+	const rootDir = config.root.toString();
+	const pagesDir = resolvePages(config).toString();
+	const fileDir = file.toString();
+
+	// Normalize the file directory path by removing the pagesDir prefix if it exists,
+	// otherwise remove the rootDir prefix.
+	const normalizedDir = fileDir.startsWith(pagesDir)
+		? fileDir.slice(pagesDir.length)
+		: fileDir.slice(rootDir.length);
+
+	const parts = normalizedDir.replace(pagesDir.toString(), '').split('/').slice(1);
+
 	for (const part of parts) {
 		if (part.startsWith('_')) return false;
 	}
+
 	return true;
 }
 
@@ -126,70 +159,15 @@ function endsWithPageExt(file: URL, settings: AstroSettings): boolean {
 }
 
 export function isPage(file: URL, settings: AstroSettings): boolean {
-	if (!isInPagesDir(file, settings.config)) return false;
+	if (!isInPagesDir(file, settings.config) && !isInjectedRoute(file, settings)) return false;
 	if (!isPublicRoute(file, settings.config)) return false;
 	return endsWithPageExt(file, settings);
 }
 
 export function isEndpoint(file: URL, settings: AstroSettings): boolean {
-	if (!isInPagesDir(file, settings.config)) return false;
+	if (!isInPagesDir(file, settings.config) && !isInjectedRoute(file, settings)) return false;
 	if (!isPublicRoute(file, settings.config)) return false;
-	return !endsWithPageExt(file, settings);
-}
-
-export function isModeServerWithNoAdapter(settings: AstroSettings): boolean {
-	return settings.config.output === 'server' && !settings.adapter;
-}
-
-export function relativeToSrcDir(config: AstroConfig, idOrUrl: URL | string) {
-	let id: string;
-	if (typeof idOrUrl !== 'string') {
-		id = unwrapId(viteID(idOrUrl));
-	} else {
-		id = idOrUrl;
-	}
-	return id.slice(slash(fileURLToPath(config.srcDir)).length);
-}
-
-export function rootRelativePath(root: URL, idOrUrl: URL | string) {
-	let id: string;
-	if (typeof idOrUrl !== 'string') {
-		id = unwrapId(viteID(idOrUrl));
-	} else {
-		id = idOrUrl;
-	}
-	return prependForwardSlash(id.slice(normalizePath(fileURLToPath(root)).length));
-}
-
-export function emoji(char: string, fallback: string) {
-	return process.platform !== 'win32' ? char : fallback;
-}
-
-/**
- * Simulate Vite's resolve and import analysis so we can import the id as an URL
- * through a script tag or a dynamic import as-is.
- */
-// NOTE: `/@id/` should only be used when the id is fully resolved
-// TODO: Export a helper util from Vite
-export async function resolveIdToUrl(loader: ModuleLoader, id: string, root?: URL) {
-	let resultId = await loader.resolveId(id, undefined);
-	// Try resolve jsx to tsx
-	if (!resultId && id.endsWith('.jsx')) {
-		resultId = await loader.resolveId(id.slice(0, -4), undefined);
-	}
-	if (!resultId) {
-		return VALID_ID_PREFIX + id;
-	}
-	if (path.isAbsolute(resultId)) {
-		const normalizedRoot = root && normalizePath(fileURLToPath(root));
-		// Convert to root-relative path if path is inside root
-		if (normalizedRoot && resultId.startsWith(normalizedRoot)) {
-			return resultId.slice(normalizedRoot.length - 1);
-		} else {
-			return '/@fs' + prependForwardSlash(resultId);
-		}
-	}
-	return VALID_ID_PREFIX + resultId;
+	return !endsWithPageExt(file, settings) && !file.toString().includes('?astro');
 }
 
 export function resolveJsToTs(filePath: string) {
@@ -203,13 +181,10 @@ export function resolveJsToTs(filePath: string) {
 }
 
 /**
- * Resolve the hydration paths so that it can be imported in the client
+ * Set a default NODE_ENV so Vite doesn't set an incorrect default when loading the Astro config
  */
-export function resolvePath(specifier: string, importer: string) {
-	if (specifier.startsWith('.')) {
-		const absoluteSpecifier = path.resolve(path.dirname(importer), specifier);
-		return resolveJsToTs(normalizePath(absoluteSpecifier));
-	} else {
-		return specifier;
+export function ensureProcessNodeEnv(defaultNodeEnv: string) {
+	if (!process.env.NODE_ENV) {
+		process.env.NODE_ENV = defaultNodeEnv;
 	}
 }

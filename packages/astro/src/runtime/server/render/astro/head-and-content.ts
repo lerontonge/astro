@@ -1,4 +1,4 @@
-import type { RenderTemplateResult } from './render-template';
+import type { RenderTemplateResult } from './render-template.js';
 
 const headAndContentSym = Symbol.for('astro.headAndContent');
 
@@ -9,7 +9,7 @@ export type HeadAndContent = {
 };
 
 export function isHeadAndContent(obj: unknown): obj is HeadAndContent {
-	return typeof obj === 'object' && !!(obj as any)[headAndContentSym];
+	return typeof obj === 'object' && obj !== null && !!(obj as any)[headAndContentSym];
 }
 
 export function createHeadAndContent(head: string, content: RenderTemplateResult): HeadAndContent {

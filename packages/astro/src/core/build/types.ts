@@ -1,55 +1,52 @@
-import type { default as vite, InlineConfig } from 'vite';
-import type {
-	AstroConfig,
-	AstroSettings,
-	BuildConfig,
-	ComponentInstance,
-	ManifestData,
-	RouteData,
-	RuntimeMode,
-	SSRLoadedRenderer,
-} from '../../@types/astro';
-import type { LogOptions } from '../logger/core';
-import type { RouteCache } from '../render/route-cache';
+import type * as vite from 'vite';
+import type { InlineConfig } from 'vite';
+import type { AstroSettings, ComponentInstance, RoutesList } from '../../types/astro.js';
+import type { MiddlewareHandler } from '../../types/public/common.js';
+import type { RuntimeMode } from '../../types/public/config.js';
+import type { RouteData, SSRLoadedRenderer } from '../../types/public/internal.js';
+import type { Logger } from '../logger/core.js';
 
 export type ComponentPath = string;
 export type ViteID = string;
-export type PageOutput = AstroConfig['output'];
 
+export type StylesheetAsset =
+	| { type: 'inline'; content: string }
+	| { type: 'external'; src: string };
+
+/** Public type exposed through the `astro:build:setup` integration hook */
 export interface PageBuildData {
+	key: string;
 	component: ComponentPath;
 	route: RouteData;
 	moduleSpecifier: string;
-	css: Map<string, { depth: number; order: number }>;
-	propagatedStyles: Map<string, Set<string>>;
-	propagatedScripts: Map<string, Set<string>>;
-	hoistedScript: { type: 'inline' | 'external'; value: string } | undefined;
+	styles: Array<{ depth: number; order: number; sheet: StylesheetAsset }>;
 }
+
 export type AllPagesData = Record<ComponentPath, PageBuildData>;
 
 /** Options for the static build */
 export interface StaticBuildOptions {
 	allPages: AllPagesData;
 	settings: AstroSettings;
-	buildConfig: BuildConfig;
-	logging: LogOptions;
-	manifest: ManifestData;
-	mode: RuntimeMode;
+	logger: Logger;
+	routesList: RoutesList;
+	runtimeMode: RuntimeMode;
 	origin: string;
 	pageNames: string[];
-	routeCache: RouteCache;
 	viteConfig: InlineConfig;
 	teardownCompiler: boolean;
+	key: Promise<CryptoKey>;
 }
 
-export interface SingleFileBuiltModule {
-	pageMap: Map<ComponentPath, ComponentInstance>;
+type ImportComponentInstance = () => Promise<ComponentInstance>;
+
+export interface SinglePageBuiltModule {
+	page: ImportComponentInstance;
+	/**
+	 * The `onRequest` hook exported by the middleware
+	 */
+	onRequest?: MiddlewareHandler;
 	renderers: SSRLoadedRenderer[];
 }
 
 export type ViteBuildReturn = Awaited<ReturnType<typeof vite.build>>;
-export type RollupOutput = Extract<
-	Extract<ViteBuildReturn, Exclude<ViteBuildReturn, Array<any>>>,
-	{ output: any }
->;
-export type OutputChunk = Extract<RollupOutput['output'][number], { type: 'chunk' }>;

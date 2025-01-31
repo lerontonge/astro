@@ -1,7 +1,7 @@
 import MagicString from 'magic-string';
-import { normalizePath, type Plugin as VitePlugin } from 'vite';
-import type { AstroSettings } from '../@types/astro.js';
+import { type Plugin as VitePlugin, normalizePath } from 'vite';
 import { isPage } from '../core/util.js';
+import type { AstroSettings } from '../types/astro.js';
 import { PAGE_SSR_SCRIPT_ID } from './index.js';
 
 export default function astroScriptsPostPlugin({
@@ -22,7 +22,7 @@ export default function astroScriptsPostPlugin({
 			let fileURL: URL;
 			try {
 				fileURL = new URL(`file://${filename}`);
-			} catch (e) {
+			} catch {
 				// If we can't construct a valid URL, exit early
 				return;
 			}
@@ -35,7 +35,7 @@ export default function astroScriptsPostPlugin({
 
 			return {
 				code: s.toString(),
-				map: s.generateMap(),
+				map: s.generateMap({ hires: 'boundary' }),
 			};
 		},
 	};
