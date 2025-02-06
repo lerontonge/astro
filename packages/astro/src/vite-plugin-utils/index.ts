@@ -1,32 +1,23 @@
+import { fileURLToPath } from 'node:url';
 import ancestor from 'common-ancestor-path';
-import { fileURLToPath } from 'url';
-import type { AstroConfig } from '../@types/astro';
 import {
 	appendExtension,
 	appendForwardSlash,
 	removeLeadingForwardSlashWindows,
 } from '../core/path.js';
 import { viteID } from '../core/util.js';
-
-/**
- * Converts the first dot in `import.meta.env` to its Unicode escape sequence,
- * which prevents Vite from replacing strings like `import.meta.env.SITE`
- * in our JS representation of modules like Markdown
- */
-export function escapeViteEnvReferences(code: string) {
-	return code.replace(/import\.meta\.env/g, 'import\\u002Emeta.env');
-}
+import type { AstroConfig } from '../types/public/config.js';
 
 export function getFileInfo(id: string, config: AstroConfig) {
 	const sitePathname = appendForwardSlash(
-		config.site ? new URL(config.base, config.site).pathname : config.base
+		config.site ? new URL(config.base, config.site).pathname : config.base,
 	);
 
 	const fileId = id.split('?')[0];
 	let fileUrl = fileId.includes('/pages/')
 		? fileId
 				.replace(/^.*?\/pages\//, sitePathname)
-				.replace(/(\/index)?\.(md|markdown|mdown|mkdn|mkd|mdwn|md|astro)$/, '')
+				.replace(/(?:\/index)?\.(?:md|markdown|mdown|mkdn|mkd|mdwn|astro)$/, '')
 		: undefined;
 	if (fileUrl && config.trailingSlash === 'always') {
 		fileUrl = appendForwardSlash(fileUrl);
@@ -53,4 +44,18 @@ export function normalizeFilename(filename: string, root: URL) {
 		filename = viteID(url);
 	}
 	return removeLeadingForwardSlashWindows(filename);
+}
+
+const postfixRE = /[?#].*$/s;
+export function cleanUrl(url: string): string {
+	return url.replace(postfixRE, '');
+}
+
+const specialQueriesRE = /(?:\?|&)(?:url|raw|direct)(?:&|$)/;
+/**
+ * Detect `?url`, `?raw`, and `?direct`, in which case we usually want to skip
+ * transforming any code with this queries as Vite will handle it directly.
+ */
+export function hasSpecialQueries(id: string): boolean {
+	return specialQueriesRE.test(id);
 }

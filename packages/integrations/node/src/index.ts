@@ -1,27 +1,43 @@
 import type { AstroAdapter, AstroIntegration } from 'astro';
-import type { Options, UserOptions } from './types';
+import { AstroError } from 'astro/errors';
+import type { Options, UserOptions } from './types.js';
 
 export function getAdapter(options: Options): AstroAdapter {
 	return {
 		name: '@astrojs/node',
 		serverEntrypoint: '@astrojs/node/server.js',
 		previewEntrypoint: '@astrojs/node/preview.js',
-		exports: ['handler', 'startServer'],
+		exports: ['handler', 'startServer', 'options'],
 		args: options,
+		adapterFeatures: {
+			buildOutput: 'server',
+			edgeMiddleware: false,
+		},
+		supportedAstroFeatures: {
+			hybridOutput: 'stable',
+			staticOutput: 'stable',
+			serverOutput: 'stable',
+			sharpImageService: 'stable',
+			i18nDomains: 'experimental',
+			envGetSecret: 'stable',
+		},
 	};
 }
 
 export default function createIntegration(userOptions: UserOptions): AstroIntegration {
 	if (!userOptions?.mode) {
-		throw new Error(`[@astrojs/node] Setting the 'mode' option is required.`);
+		throw new AstroError(`Setting the 'mode' option is required.`);
 	}
 
 	let _options: Options;
 	return {
 		name: '@astrojs/node',
 		hooks: {
-			'astro:config:setup': ({ updateConfig }) => {
+			'astro:config:setup': async ({ updateConfig, config }) => {
 				updateConfig({
+					image: {
+						endpoint: config.image.endpoint ?? 'astro/assets/endpoint/node',
+					},
 					vite: {
 						ssr: {
 							noExternal: ['@astrojs/node'],
@@ -36,12 +52,9 @@ export default function createIntegration(userOptions: UserOptions): AstroIntegr
 					server: config.build.server?.toString(),
 					host: config.server.host,
 					port: config.server.port,
+					assets: config.build.assets,
 				};
 				setAdapter(getAdapter(_options));
-
-				if (config.output === 'static') {
-					console.warn(`[@astrojs/node] \`output: "server"\` is required to use this adapter.`);
-				}
 			},
 		},
 	};

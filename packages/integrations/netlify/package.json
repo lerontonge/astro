@@ -1,56 +1,62 @@
 {
   "name": "@astrojs/netlify",
   "description": "Deploy your site to Netlify",
-  "version": "2.2.2",
+  "version": "6.1.0",
   "type": "module",
   "types": "./dist/index.d.ts",
   "author": "withastro",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/withastro/astro.git",
-    "directory": "packages/integrations/netlify"
+    "url": "https://github.com/withastro/adapters.git",
+    "directory": "packages/netlify"
   },
   "keywords": [
     "withastro",
     "astro-adapter"
   ],
-  "bugs": "https://github.com/withastro/astro/issues",
+  "bugs": "https://github.com/withastro/adapters/issues",
   "homepage": "https://docs.astro.build/en/guides/integrations-guide/netlify/",
   "exports": {
     ".": "./dist/index.js",
-    "./functions": "./dist/integration-functions.js",
-    "./netlify-functions.js": "./dist/netlify-functions.js",
-    "./edge-functions": "./dist/integration-edge-functions.js",
-    "./netlify-edge-functions.js": "./dist/netlify-edge-functions.js",
+    "./static": "./dist/static.js",
+    "./functions": "./dist/functions.js",
+    "./ssr-function.js": "./dist/ssr-function.js",
+    "./image-service.js": "./dist/image-service.js",
     "./package.json": "./package.json"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "astro-scripts build \"src/**/*.ts\" && tsc",
-    "build:ci": "astro-scripts build \"src/**/*.ts\"",
-    "dev": "astro-scripts dev \"src/**/*.ts\"",
-    "test-fn": "mocha --exit --timeout 20000 test/functions/",
-    "test-edge": "deno test --allow-run --allow-read --allow-net --allow-env ./test/edge-functions/",
-    "test": "npm run test-fn"
+    "test": "pnpm run test-fn && pnpm run test-static",
+    "test-fn": "astro-scripts test \"test/functions/*.test.js\"",
+    "test-static": "astro-scripts test \"test/static/*.test.js\"",
+    "test:hosted": "astro-scripts test \"test/hosted/*.test.js\""
   },
   "dependencies": {
-    "@astrojs/webapi": "^2.1.0",
-    "@netlify/functions": "^1.0.0",
-    "esbuild": "^0.15.18"
+    "@astrojs/internal-helpers": "0.5.1",
+    "@astrojs/underscore-redirects": "^0.6.0",
+    "@netlify/functions": "^2.8.0",
+    "@vercel/nft": "^0.29.0",
+    "esbuild": "^0.24.0",
+    "vite": "^6.0.7"
   },
   "peerDependencies": {
-    "astro": "workspace:^2.3.0"
+    "astro": "^5.0.0"
   },
   "devDependencies": {
-    "@netlify/edge-functions": "^2.0.0",
+    "@netlify/edge-functions": "^2.11.1",
     "@netlify/edge-handler-types": "^0.34.1",
-    "@types/node": "^14.18.20",
-    "astro": "workspace:*",
+    "@types/node": "^22.10.6",
+    "astro": "^5.1.6",
     "astro-scripts": "workspace:*",
-    "chai": "^4.3.6",
-    "cheerio": "^1.0.0-rc.11",
-    "mocha": "^9.2.2",
-    "vite": "^4.2.1"
+    "cheerio": "1.0.0",
+    "execa": "^8.0.1",
+    "fast-glob": "^3.3.3",
+    "strip-ansi": "^7.1.0",
+    "typescript": "^5.7.3"
   },
   "astro": {
     "external": true

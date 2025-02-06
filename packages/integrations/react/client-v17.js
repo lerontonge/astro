@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { render, hydrate } from 'react-dom';
+import { hydrate, render, unmountComponentAtNode } from 'react-dom';
 import StaticHtml from './static-html.js';
 
 export default (element) =>
@@ -10,10 +10,13 @@ export default (element) =>
 		const componentEl = createElement(
 			Component,
 			props,
-			children != null ? createElement(StaticHtml, { value: children }) : children
+			children != null ? createElement(StaticHtml, { value: children }) : children,
 		);
-		if (client === 'only') {
-			return render(componentEl, element);
-		}
-		return hydrate(componentEl, element);
+
+		const isHydrate = client !== 'only';
+		const bootstrap = isHydrate ? hydrate : render;
+		bootstrap(componentEl, element);
+		element.addEventListener('astro:unmount', () => unmountComponentAtNode(element), {
+			once: true,
+		});
 	};

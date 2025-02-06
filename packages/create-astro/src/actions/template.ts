@@ -1,14 +1,19 @@
-/* eslint no-console: 'off' */
-import type { Context } from './context';
+import type { Context } from './context.js';
 
-import { color } from '@astrojs/cli-kit';
-import { downloadTemplate } from 'giget';
 import fs from 'node:fs';
 import path from 'node:path';
-import { error, info, spinner, title } from '../messages.js';
+import { color } from '@astrojs/cli-kit';
+import { downloadTemplate } from '@bluwy/giget-core';
+import { error, info, title } from '../messages.js';
 
-export async function template(ctx: Pick<Context, 'template' | 'prompt' | 'dryRun' | 'exit'>) {
-	if (!ctx.template) {
+export async function template(
+	ctx: Pick<Context, 'template' | 'prompt' | 'yes' | 'dryRun' | 'exit' | 'tasks'>,
+) {
+	if (!ctx.template && ctx.yes) ctx.template = 'basics';
+
+	if (ctx.template) {
+		await info('tmpl', `Using ${color.reset(ctx.template)}${color.dim(' as project template')}`);
+	} else {
 		const { template: tmpl } = await ctx.prompt({
 			name: 'template',
 			type: 'select',
@@ -16,25 +21,23 @@ export async function template(ctx: Pick<Context, 'template' | 'prompt' | 'dryRu
 			message: 'How would you like to start your new project?',
 			initial: 'basics',
 			choices: [
-				{ value: 'basics', label: 'Include sample files', hint: '(recommended)' },
+				{ value: 'basics', label: 'A basic, minimal starter', hint: '(recommended)' },
 				{ value: 'blog', label: 'Use blog template' },
-				{ value: 'minimal', label: 'Empty' },
+				{ value: 'starlight', label: 'Use docs (Starlight) template' },
 			],
 		});
 		ctx.template = tmpl;
-	} else {
-		await info('tmpl', `Using ${color.reset(ctx.template)}${color.dim(' as project template')}`);
 	}
 
 	if (ctx.dryRun) {
 		await info('--dry-run', `Skipping template copying`);
 	} else if (ctx.template) {
-		await spinner({
+		ctx.tasks.push({
+			pending: 'Template',
 			start: 'Template copying...',
 			end: 'Template copied',
 			while: () =>
 				copyTemplate(ctx.template!, ctx as Context).catch((e) => {
-					// eslint-disable-next-line no-console
 					if (e instanceof Error) {
 						error('error', e.message);
 						process.exit(1);
@@ -50,54 +53,87 @@ export async function template(ctx: Pick<Context, 'template' | 'prompt' | 'dryRu
 }
 
 // some files are only needed for online editors when using astro.new. Remove for create-astro installs.
-const FILES_TO_REMOVE = ['sandbox.config.json', 'CHANGELOG.md'];
+const FILES_TO_REMOVE = ['CHANGELOG.md', '.codesandbox'];
 const FILES_TO_UPDATE = {
 	'package.json': (file: string, overrides: { name: string }) =>
 		fs.promises.readFile(file, 'utf-8').then((value) => {
 			// Match first indent in the file or fallback to `\t`
 			const indent = /(^\s+)/m.exec(value)?.[1] ?? '\t';
-			fs.promises.writeFile(
+			return fs.promises.writeFile(
 				file,
 				JSON.stringify(
 					Object.assign(JSON.parse(value), Object.assign(overrides, { private: undefined })),
 					null,
-					indent
+					indent,
 				),
-				'utf-8'
+				'utf-8',
 			);
 		}),
 };
 
-export default async function copyTemplate(tmpl: string, ctx: Context) {
-	const ref = ctx.ref || 'latest';
+export function getTemplateTarget(tmpl: string, ref = 'latest') {
+	// Handle Starlight templates
+	if (tmpl.startsWith('starlight')) {
+		const [, starter = 'basics'] = tmpl.split('/');
+		return `github:withastro/starlight/examples/${starter}`;
+	}
+
+	// Handle third-party templates
 	const isThirdParty = tmpl.includes('/');
+	if (isThirdParty) return tmpl;
 
-	const templateTarget = isThirdParty ? tmpl : `github:withastro/astro/examples/${tmpl}#${ref}`;
+	// Handle Astro templates
+	if (ref === 'latest') {
+		// `latest` ref is specially handled to route to a branch specifically
+		// to allow faster downloads. Otherwise giget has to download the entire
+		// repo and only copy a sub directory
+		return `github:withastro/astro#examples/${tmpl}`;
+	} else {
+		return `github:withastro/astro/examples/${tmpl}#${ref}`;
+	}
+}
 
+export default async function copyTemplate(tmpl: string, ctx: Context) {
+	const templateTarget = getTemplateTarget(tmpl, ctx.ref);
 	// Copy
 	if (!ctx.dryRun) {
 		try {
 			await downloadTemplate(templateTarget, {
 				force: true,
-				provider: 'github',
 				cwd: ctx.cwd,
 				dir: '.',
 			});
 		} catch (err: any) {
-			fs.rmdirSync(ctx.cwd);
-			if (err.message.includes('404')) {
-				throw new Error(`Template ${color.reset(tmpl)} ${color.dim('does not exist!')}`);
-			} else {
-				throw new Error(err.message);
+			// Only remove the directory if it's most likely created by us.
+			if (ctx.cwd !== '.' && ctx.cwd !== './' && !ctx.cwd.startsWith('../')) {
+				try {
+					fs.rmdirSync(ctx.cwd);
+				} catch (_) {
+					// Ignore any errors from removing the directory,
+					// make sure we throw and display the original error.
+				}
 			}
-		}
 
-		// It's possible the repo exists (ex. `withastro/astro`),
-		// But the template route is invalid (ex. `withastro/astro/examples/DNE`).
-		// `giget` doesn't throw for this case,
-		// so check if the directory is still empty as a heuristic.
-		if (fs.readdirSync(ctx.cwd).length === 0) {
-			throw new Error(`Template ${color.reset(tmpl)} ${color.dim('is empty!')}`);
+			if (err.message?.includes('404')) {
+				throw new Error(`Template ${color.reset(tmpl)} ${color.dim('does not exist!')}`);
+			}
+
+			if (err.message) {
+				error('error', err.message);
+			}
+			try {
+				// The underlying error is often buried deep in the `cause` property
+				// This is in a try/catch block in case of weirdnesses in accessing the `cause` property
+				if ('cause' in err) {
+					// This is probably included in err.message, but we can log it just in case it has extra info
+					error('error', err.cause);
+					if ('cause' in err.cause) {
+						// Hopefully the actual fetch error message
+						error('error', err.cause?.cause);
+					}
+				}
+			} catch {}
+			throw new Error(`Unable to download template ${color.reset(tmpl)}`);
 		}
 
 		// Post-process in parallel

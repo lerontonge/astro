@@ -1,8 +1,8 @@
 import { expect } from '@playwright/test';
-import { testFactory } from './test-utils.js';
+import { scrollToElement, testFactory, waitForHydrate } from './test-utils.js';
 
-export function prepareTestFactory(opts) {
-	const test = testFactory(opts);
+export function prepareTestFactory(testFile, opts) {
+	const test = testFactory(testFile, opts);
 
 	let devServer;
 
@@ -39,6 +39,8 @@ export function prepareTestFactory(opts) {
 			const count = counter.locator('pre');
 			await expect(count, 'initial count is 0').toHaveText('0');
 
+			await waitForHydrate(page, counter);
+
 			const inc = counter.locator('.increment');
 			await inc.click();
 
@@ -54,6 +56,8 @@ export function prepareTestFactory(opts) {
 			const count = counter.locator('pre');
 			await expect(count, 'initial count is 0').toHaveText('0');
 
+			await waitForHydrate(page, counter);
+
 			const inc = counter.locator('.increment');
 			await inc.click();
 
@@ -65,11 +69,17 @@ export function prepareTestFactory(opts) {
 
 			// Make sure the component is on screen to trigger hydration
 			const counter = page.locator('#client-visible');
-			await counter.scrollIntoViewIfNeeded();
+			// NOTE: Use custom implementation instead of `counter.scrollIntoViewIfNeeded`
+			// as Playwright's function doesn't take into account of `counter` being hydrated
+			// and losing the original DOM reference.
+			await scrollToElement(counter);
+
 			await expect(counter, 'component is visible').toBeVisible();
 
 			const count = counter.locator('pre');
 			await expect(count, 'initial count is 0').toHaveText('0');
+
+			await waitForHydrate(page, counter);
 
 			const inc = counter.locator('.increment');
 			await inc.click();
@@ -85,13 +95,14 @@ export function prepareTestFactory(opts) {
 
 			const count = counter.locator('pre');
 			await expect(count, 'initial count is 0').toHaveText('0');
-
 			const inc = counter.locator('.increment');
 			await inc.click();
 			await expect(count, 'component not hydrated yet').toHaveText('0');
 
 			// Reset the viewport to hydrate the component (max-width: 50rem)
 			await page.setViewportSize({ width: 414, height: 1124 });
+			await waitForHydrate(page, counter);
+
 			await inc.click();
 			await expect(count, 'count incremented by 1').toHaveText('1');
 		});
@@ -100,6 +111,7 @@ export function prepareTestFactory(opts) {
 			await page.goto(astro.resolveUrl(pageUrl));
 
 			const label = page.locator('#client-only');
+			await waitForHydrate(page, label);
 			await expect(label, 'component is visible').toBeVisible();
 
 			await expect(label, 'slot text is visible').toHaveText('Framework client:only component');
@@ -114,7 +126,7 @@ export function prepareTestFactory(opts) {
 
 			// Edit the component's initial count prop
 			await astro.editFile(pageSourceFilePath, (original) =>
-				original.replace('id="client-idle" {...someProps}', 'id="client-idle" count={5}')
+				original.replace('id="client-idle" {...someProps}', 'id="client-idle" count={5}'),
 			);
 
 			await expect(count, 'count prop updated').toHaveText('5', { timeout: 10000 });
@@ -124,19 +136,19 @@ export function prepareTestFactory(opts) {
 			await astro.editFile(componentFilePath, (original) =>
 				original.replace(
 					'Framework client:only component',
-					'Updated framework client:only component'
-				)
+					'Updated framework client:only component',
+				),
 			);
 
 			const label = page.locator('#client-only');
 			await expect(label, 'client:only component is visible').toBeVisible();
 			await expect(label, 'client:only slot text is visible').toHaveText(
-				'Updated framework client:only component'
+				'Updated framework client:only component',
 			);
 
 			// Edit the imported CSS file
 			await astro.editFile(counterCssFilePath || './src/components/Counter.css', (original) =>
-				original.replace('font-size: 2em;', 'font-size: 24px;')
+				original.replace('font-size: 2em;', 'font-size: 24px;'),
 			);
 
 			await expect(count, 'imported CSS updated').toHaveCSS('font-size', '24px');

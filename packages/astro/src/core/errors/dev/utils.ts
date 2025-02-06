@@ -1,14 +1,15 @@
-import { escape } from 'html-escaper';
-import { bold, underline } from 'kleur/colors';
 import * as fs from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import stripAnsi from 'strip-ansi';
+import { stripVTControlCharacters } from 'node:util';
+import { escape } from 'html-escaper';
+import { bold, underline } from 'kleur/colors';
 import type { ESBuildTransformResult } from 'vite';
-import { normalizePath } from 'vite';
-import type { SSRError } from '../../../@types/astro.js';
+import type { SSRError } from '../../../types/public/internal.js';
 import { removeLeadingForwardSlashWindows } from '../../path.js';
+import { normalizePath } from '../../viteUtils.js';
 import { AggregateError, type ErrorWithMetadata } from '../errors.js';
+import { AstroErrorData } from '../index.js';
 import { codeFrame } from '../printer.js';
 import { normalizeLF } from '../utils.js';
 
@@ -18,15 +19,19 @@ type EsbuildMessage = ESBuildTransformResult['warnings'][number];
  * Takes any error-like object and returns a standardized Error + metadata object.
  * Useful for consistent reporting regardless of where the error surfaced from.
  */
-export function collectErrorMetadata(e: any, rootFolder?: URL | undefined): ErrorWithMetadata {
+export function collectErrorMetadata(e: any, rootFolder?: URL): ErrorWithMetadata {
 	const err =
-		AggregateError.is(e) || Array.isArray((e as any).errors)
-			? (e.errors as SSRError[])
-			: [e as SSRError];
+		AggregateError.is(e) || Array.isArray(e.errors) ? (e.errors as SSRError[]) : [e as SSRError];
 
 	err.forEach((error) => {
-		if (error.stack) {
-			error = collectInfoFromStacktrace(e);
+		if (e.stack) {
+			const stackInfo = collectInfoFromStacktrace(e);
+			try {
+				error.stack = stripVTControlCharacters(stackInfo.stack);
+			} catch {}
+			error.loc = stackInfo.loc;
+			error.plugin = stackInfo.plugin;
+			error.pluginCode = stackInfo.pluginCode;
 		}
 
 		// Make sure the file location is absolute, otherwise:
@@ -54,7 +59,7 @@ export function collectErrorMetadata(e: any, rootFolder?: URL | undefined): Erro
 
 				if (!error.frame) {
 					const frame = codeFrame(fileContents, error.loc);
-					error.frame = frame;
+					error.frame = stripVTControlCharacters(frame);
 				}
 
 				if (!error.fullCode) {
@@ -65,17 +70,29 @@ export function collectErrorMetadata(e: any, rootFolder?: URL | undefined): Erro
 
 		// Generic error (probably from Vite, and already formatted)
 		error.hint = generateHint(e);
+
+		// Strip ANSI for `message` property. Note that ESBuild errors may not have the property,
+		// but it will be handled and added below, which is already ANSI-free
+		if (error.message) {
+			try {
+				error.message = stripVTControlCharacters(error.message);
+			} catch {
+				// Setting `error.message` can fail here if the message is read-only, which for the vast majority of cases will never happen, however some somewhat obscure cases can cause this to happen.
+			}
+		}
 	});
 
 	// If we received an array of errors and it's not from us, it's most likely from ESBuild, try to extract info for Vite to display
 	// NOTE: We still need to be defensive here, because it might not necessarily be from ESBuild, it's just fairly likely.
-	if (!AggregateError.is(e) && Array.isArray((e as any).errors)) {
+	if (!AggregateError.is(e) && Array.isArray(e.errors)) {
 		(e.errors as EsbuildMessage[]).forEach((buildError, i) => {
 			const { location, pluginName, text } = buildError;
 
 			// ESBuild can give us a slightly better error message than the one in the error, so let's use it
 			if (text) {
-				err[i].message = text;
+				try {
+					err[i].message = text;
+				} catch {}
 			}
 
 			if (location) {
@@ -123,7 +140,7 @@ export function collectErrorMetadata(e: any, rootFolder?: URL | undefined): Erro
 function generateHint(err: ErrorWithMetadata): string | undefined {
 	const commonBrowserAPIs = ['document', 'window'];
 
-	if (/Unknown file extension \"\.(jsx|vue|svelte|astro|css)\" for /.test(err.message)) {
+	if (/Unknown file extension "\.(?:jsx|vue|svelte|astro|css)" for /.test(err.message)) {
 		return 'You likely need to add this package to `vite.ssr.noExternal` in your astro config file.';
 	} else if (commonBrowserAPIs.some((api) => err.toString().includes(api))) {
 		const hint = `Browser APIs are not available on the server.
@@ -141,25 +158,36 @@ See https://docs.astro.build/en/guides/troubleshooting/#document-or-window-is-no
 	return err.hint;
 }
 
-function collectInfoFromStacktrace(error: SSRError): SSRError {
-	if (!error.stack) return error;
+type StackInfo = Pick<SSRError, 'stack' | 'loc' | 'plugin' | 'pluginCode'>;
+
+function collectInfoFromStacktrace(error: SSRError & { stack: string }): StackInfo {
+	let stackInfo: StackInfo = {
+		stack: error.stack,
+		plugin: error.plugin,
+		pluginCode: error.pluginCode,
+		loc: error.loc,
+	};
 
 	// normalize error stack line-endings to \n
-	error.stack = normalizeLF(error.stack);
-	const stackText = stripAnsi(error.stack);
+	stackInfo.stack = normalizeLF(error.stack);
+	const stackText = stripVTControlCharacters(error.stack);
 
 	// Try to find possible location from stack if we don't have one
-	if (!error.loc || (!error.loc.column && !error.loc.line)) {
+	if (!stackInfo.loc || (!stackInfo.loc.column && !stackInfo.loc.line)) {
 		const possibleFilePath =
 			error.loc?.file ||
 			error.pluginCode ||
 			error.id ||
 			// TODO: this could be better, `src` might be something else
-			stackText.split('\n').find((ln) => ln.includes('src') || ln.includes('node_modules'));
-		const source = possibleFilePath?.replace(/^[^(]+\(([^)]+).*$/, '$1').replace(/^\s+at\s+/, '');
+			stackText
+				.split('\n')
+				.find((ln) => ln.includes('src') || ln.includes('node_modules'));
+		// Disable eslint as we're not sure how to improve this regex yet
+		// eslint-disable-next-line regexp/no-super-linear-backtracking
+		const source = possibleFilePath?.replace?.(/^[^(]+\(([^)]+).*$/, '$1').replace(/^\s+at\s+/, '');
 
-		let file = source?.replace(/(:[0-9]+)/g, '');
-		const location = /:([0-9]+):([0-9]+)/g.exec(source!) ?? [];
+		let file = source?.replace(/:\d+/g, '');
+		const location = /:(\d+):(\d+)/.exec(source!) ?? [];
 		const line = location[1];
 		const column = location[2];
 
@@ -168,7 +196,7 @@ function collectInfoFromStacktrace(error: SSRError): SSRError {
 				file = fileURLToPath(file);
 			} catch {}
 
-			error.loc = {
+			stackInfo.loc = {
 				file,
 				line: Number.parseInt(line),
 				column: Number.parseInt(column),
@@ -177,45 +205,61 @@ function collectInfoFromStacktrace(error: SSRError): SSRError {
 	}
 
 	// Derive plugin from stack (if possible)
-	if (!error.plugin) {
-		error.plugin =
-			/withastro\/astro\/packages\/integrations\/([\w-]+)/gim.exec(stackText)?.at(1) ||
-			/(@astrojs\/[\w-]+)\/(server|client|index)/gim.exec(stackText)?.at(1) ||
+	if (!stackInfo.plugin) {
+		stackInfo.plugin =
+			/withastro\/astro\/packages\/integrations\/([\w-]+)/i.exec(stackText)?.at(1) ||
+			/(@astrojs\/[\w-]+)\/(server|client|index)/i.exec(stackText)?.at(1) ||
 			undefined;
 	}
 
 	// Normalize stack (remove `/@fs/` urls, etc)
-	error.stack = cleanErrorStack(error.stack);
+	stackInfo.stack = cleanErrorStack(error.stack);
 
-	return error;
+	return stackInfo;
 }
 
 function cleanErrorStack(stack: string) {
 	return stack
-		.split(/\n/g)
+		.split(/\n/)
 		.map((l) => l.replace(/\/@fs\//g, '/'))
 		.join('\n');
 }
+
+export function getDocsForError(err: ErrorWithMetadata): string | undefined {
+	if (err.name !== 'UnknownError' && err.name in AstroErrorData) {
+		return `https://docs.astro.build/en/reference/errors/${getKebabErrorName(err.name)}/`;
+	}
+
+	return undefined;
+
+	/**
+	 * The docs has kebab-case urls for errors, so we need to convert the error name
+	 * @param errorName
+	 */
+	function getKebabErrorName(errorName: string): string {
+		return errorName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+	}
+}
+
+const linkRegex = /\[([^[]+)\]\((.*)\)/g;
+const boldRegex = /\*\*(.+)\*\*/g;
+const urlRegex = / ((?:https?|ftp):\/\/[-\w+&@#\\/%?=~|!:,.;]*[-\w+&@#\\/%=~|])/gi;
+const codeRegex = /`([^`]+)`/g;
 
 /**
  * Render a subset of Markdown to HTML or a CLI output
  */
 export function renderErrorMarkdown(markdown: string, target: 'html' | 'cli') {
-	const linkRegex = /\[(.+)\]\((.+)\)/gm;
-	const boldRegex = /\*\*(.+)\*\*/gm;
-	const urlRegex = / (\b(https?|ftp):\/\/[-A-Z0-9+&@#\\/%?=~_|!:,.;]*[-A-Z0-9+&@#\\/%=~_|]) /gim;
-	const codeRegex = /`([^`]+)`/gim;
-
 	if (target === 'html') {
 		return escape(markdown)
 			.replace(linkRegex, `<a href="$2" target="_blank">$1</a>`)
 			.replace(boldRegex, '<b>$1</b>')
-			.replace(urlRegex, ' <a href="$1" target="_blank">$1</a> ')
+			.replace(urlRegex, ' <a href="$1" target="_blank">$1</a>')
 			.replace(codeRegex, '<code>$1</code>');
 	} else {
 		return markdown
-			.replace(linkRegex, (fullMatch, m1, m2) => `${bold(m1)} ${underline(m2)}`)
-			.replace(urlRegex, (fullMatch, m1) => ` ${underline(fullMatch.trim())} `)
-			.replace(boldRegex, (fullMatch, m1) => `${bold(m1)}`);
+			.replace(linkRegex, (_, m1, m2) => `${bold(m1)} ${underline(m2)}`)
+			.replace(urlRegex, (fullMatch) => ` ${underline(fullMatch.trim())}`)
+			.replace(boldRegex, (_, m1) => `${bold(m1)}`);
 	}
 }

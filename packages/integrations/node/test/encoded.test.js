@@ -1,6 +1,7 @@
+import * as assert from 'node:assert/strict';
+import { before, describe, it } from 'node:test';
 import nodejs from '../dist/index.js';
-import { loadFixture, createRequestAndResponse } from './test-utils.js';
-import { expect } from 'chai';
+import { createRequestAndResponse, loadFixture } from './test-utils.js';
 
 describe('Encoded Pathname', () => {
 	/** @type {import('./test-utils').Fixture} */
@@ -17,7 +18,7 @@ describe('Encoded Pathname', () => {
 
 	it('Can get an Astro file', async () => {
 		const { handler } = await import('./fixtures/encoded/dist/server/entry.mjs');
-		let { req, res, text } = createRequestAndResponse({
+		const { req, res, text } = createRequestAndResponse({
 			url: '/什么',
 		});
 
@@ -25,13 +26,13 @@ describe('Encoded Pathname', () => {
 		req.send();
 
 		const html = await text();
-		expect(html).to.include('什么</h1>');
+		assert.equal(html.includes('什么</h1>'), true);
 	});
 
 	it('Can get a Markdown file', async () => {
 		const { handler } = await import('./fixtures/encoded/dist/server/entry.mjs');
 
-		let { req, res, text } = createRequestAndResponse({
+		const { req, res, text } = createRequestAndResponse({
 			url: '/blog/什么',
 		});
 
@@ -39,6 +40,6 @@ describe('Encoded Pathname', () => {
 		req.send();
 
 		const html = await text();
-		expect(html).to.include('什么</h1>');
+		assert.equal(html.includes('什么</h1>'), true);
 	});
 });

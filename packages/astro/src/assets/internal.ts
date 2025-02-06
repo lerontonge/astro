@@ -1,14 +1,23 @@
-import fs from 'node:fs';
-import { basename, join } from 'node:path/posix';
-import type { StaticBuildOptions } from '../core/build/types.js';
+import { isRemotePath } from '@astrojs/internal-helpers/path';
 import { AstroError, AstroErrorData } from '../core/errors/index.js';
-import { prependForwardSlash } from '../core/path.js';
-import { isLocalService, type ImageService, type LocalImageService } from './services/service.js';
-import type { GetImageResult, ImageMetadata, ImageTransform } from './types.js';
-
-export function isESMImportedImage(src: ImageMetadata | string): src is ImageMetadata {
-	return typeof src === 'object';
-}
+import type { AstroConfig } from '../types/public/config.js';
+import { DEFAULT_HASH_PROPS } from './consts.js';
+import {
+	DEFAULT_RESOLUTIONS,
+	LIMITED_RESOLUTIONS,
+	getSizesAttribute,
+	getWidths,
+} from './layout.js';
+import { type ImageService, isLocalService } from './services/service.js';
+import {
+	type GetImageResult,
+	type ImageTransform,
+	type SrcSetValue,
+	type UnresolvedImageTransform,
+	isImageMetadata,
+} from './types.js';
+import { isESMImportedImage, isRemoteImage, resolveSrc } from './utils/imageKind.js';
+import { inferRemoteSize } from './utils/remoteProbe.js';
 
 export async function getConfiguredImageService(): Promise<ImageService> {
 	if (!globalThis?.astroAsset?.imageService) {
@@ -17,7 +26,7 @@ export async function getConfiguredImageService(): Promise<ImageService> {
 			'virtual:image-service'
 		).catch((e) => {
 			const error = new AstroError(AstroErrorData.InvalidImageService);
-			(error as any).cause = e;
+			error.cause = e;
 			throw error;
 		});
 
@@ -29,110 +38,184 @@ export async function getConfiguredImageService(): Promise<ImageService> {
 	return globalThis.astroAsset.imageService;
 }
 
-/**
- * Get an optimized image and the necessary attributes to render it.
- *
- * **Example**
- * ```astro
- * ---
- * import { getImage } from 'astro:assets';
- * import originalImage from '../assets/image.png';
- *
- * const optimizedImage = await getImage({src: originalImage, width: 1280 });
- * ---
- * <img src={optimizedImage.src} {...optimizedImage.attributes} />
- * ```
- *
- * This is functionally equivalent to using the `<Image />` component, as the component calls this function internally.
- */
-export async function getImage(options: ImageTransform): Promise<GetImageResult> {
+type ImageConfig = AstroConfig['image'] & {
+	experimentalResponsiveImages: boolean;
+};
+
+export async function getImage(
+	options: UnresolvedImageTransform,
+	imageConfig: ImageConfig,
+): Promise<GetImageResult> {
 	if (!options || typeof options !== 'object') {
 		throw new AstroError({
 			...AstroErrorData.ExpectedImageOptions,
 			message: AstroErrorData.ExpectedImageOptions.message(JSON.stringify(options)),
 		});
 	}
+	if (typeof options.src === 'undefined') {
+		throw new AstroError({
+			...AstroErrorData.ExpectedImage,
+			message: AstroErrorData.ExpectedImage.message(
+				options.src,
+				'undefined',
+				JSON.stringify(options),
+			),
+		});
+	}
+
+	if (isImageMetadata(options)) {
+		throw new AstroError(AstroErrorData.ExpectedNotESMImage);
+	}
 
 	const service = await getConfiguredImageService();
-	const validatedOptions = service.validateOptions ? service.validateOptions(options) : options;
 
-	let imageURL = service.getURL(validatedOptions);
+	// If the user inlined an import, something fairly common especially in MDX, or passed a function that returns an Image, await it for them
+	const resolvedOptions: ImageTransform = {
+		...options,
+		src: await resolveSrc(options.src),
+	};
 
-	// In build and for local services, we need to collect the requested parameters so we can generate the final images
-	if (isLocalService(service) && globalThis.astroAsset.addStaticImage) {
-		imageURL = globalThis.astroAsset.addStaticImage(validatedOptions);
+	let originalWidth: number | undefined;
+	let originalHeight: number | undefined;
+	let originalFormat: string | undefined;
+
+	// Infer size for remote images if inferSize is true
+	if (
+		options.inferSize &&
+		isRemoteImage(resolvedOptions.src) &&
+		isRemotePath(resolvedOptions.src)
+	) {
+		const result = await inferRemoteSize(resolvedOptions.src); // Directly probe the image URL
+		resolvedOptions.width ??= result.width;
+		resolvedOptions.height ??= result.height;
+		originalWidth = result.width;
+		originalHeight = result.height;
+		originalFormat = result.format;
+		delete resolvedOptions.inferSize; // Delete so it doesn't end up in the attributes
+	}
+
+	const originalFilePath = isESMImportedImage(resolvedOptions.src)
+		? resolvedOptions.src.fsPath
+		: undefined; // Only set for ESM imports, where we do have a file path
+
+	// Clone the `src` object if it's an ESM import so that we don't refer to any properties of the original object
+	// Causing our generate step to think the image is used outside of the image optimization pipeline
+	const clonedSrc = isESMImportedImage(resolvedOptions.src)
+		? // @ts-expect-error - clone is a private, hidden prop
+			(resolvedOptions.src.clone ?? resolvedOptions.src)
+		: resolvedOptions.src;
+
+	if (isESMImportedImage(clonedSrc)) {
+		originalWidth = clonedSrc.width;
+		originalHeight = clonedSrc.height;
+		originalFormat = clonedSrc.format;
+	}
+
+	if (originalWidth && originalHeight) {
+		// Calculate any missing dimensions from the aspect ratio, if available
+		const aspectRatio = originalWidth / originalHeight;
+		if (resolvedOptions.height && !resolvedOptions.width) {
+			resolvedOptions.width = Math.round(resolvedOptions.height * aspectRatio);
+		} else if (resolvedOptions.width && !resolvedOptions.height) {
+			resolvedOptions.height = Math.round(resolvedOptions.width / aspectRatio);
+		} else if (!resolvedOptions.width && !resolvedOptions.height) {
+			resolvedOptions.width = originalWidth;
+			resolvedOptions.height = originalHeight;
+		}
+	}
+	resolvedOptions.src = clonedSrc;
+
+	const layout = options.layout ?? imageConfig.experimentalLayout;
+
+	if (imageConfig.experimentalResponsiveImages && layout) {
+		resolvedOptions.widths ||= getWidths({
+			width: resolvedOptions.width,
+			layout,
+			originalWidth,
+			breakpoints: imageConfig.experimentalBreakpoints?.length
+				? imageConfig.experimentalBreakpoints
+				: isLocalService(service)
+					? LIMITED_RESOLUTIONS
+					: DEFAULT_RESOLUTIONS,
+		});
+		resolvedOptions.sizes ||= getSizesAttribute({ width: resolvedOptions.width, layout });
+
+		if (resolvedOptions.priority) {
+			resolvedOptions.loading ??= 'eager';
+			resolvedOptions.decoding ??= 'sync';
+			resolvedOptions.fetchpriority ??= 'high';
+		} else {
+			resolvedOptions.loading ??= 'lazy';
+			resolvedOptions.decoding ??= 'async';
+			resolvedOptions.fetchpriority ??= 'auto';
+		}
+		delete resolvedOptions.priority;
+		delete resolvedOptions.densities;
+	}
+
+	const validatedOptions = service.validateOptions
+		? await service.validateOptions(resolvedOptions, imageConfig)
+		: resolvedOptions;
+
+	// Get all the options for the different srcSets
+	const srcSetTransforms = service.getSrcSet
+		? await service.getSrcSet(validatedOptions, imageConfig)
+		: [];
+
+	let imageURL = await service.getURL(validatedOptions, imageConfig);
+
+	const matchesOriginal = (transform: ImageTransform) =>
+		transform.width === originalWidth &&
+		transform.height === originalHeight &&
+		transform.format === originalFormat;
+
+	let srcSets: SrcSetValue[] = await Promise.all(
+		srcSetTransforms.map(async (srcSet) => {
+			return {
+				transform: srcSet.transform,
+				url: matchesOriginal(srcSet.transform)
+					? imageURL
+					: await service.getURL(srcSet.transform, imageConfig),
+				descriptor: srcSet.descriptor,
+				attributes: srcSet.attributes,
+			};
+		}),
+	);
+
+	if (
+		isLocalService(service) &&
+		globalThis.astroAsset.addStaticImage &&
+		!(isRemoteImage(validatedOptions.src) && imageURL === validatedOptions.src)
+	) {
+		const propsToHash = service.propertiesToHash ?? DEFAULT_HASH_PROPS;
+		imageURL = globalThis.astroAsset.addStaticImage(
+			validatedOptions,
+			propsToHash,
+			originalFilePath,
+		);
+		srcSets = srcSetTransforms.map((srcSet) => {
+			return {
+				transform: srcSet.transform,
+				url: matchesOriginal(srcSet.transform)
+					? imageURL
+					: globalThis.astroAsset.addStaticImage!(srcSet.transform, propsToHash, originalFilePath),
+				descriptor: srcSet.descriptor,
+				attributes: srcSet.attributes,
+			};
+		});
 	}
 
 	return {
-		rawOptions: options,
+		rawOptions: resolvedOptions,
 		options: validatedOptions,
 		src: imageURL,
-		attributes:
-			service.getHTMLAttributes !== undefined ? service.getHTMLAttributes(validatedOptions) : {},
-	};
-}
-
-export function getStaticImageList(): Iterable<
-	[string, { path: string; options: ImageTransform }]
-> {
-	if (!globalThis?.astroAsset?.staticImages) {
-		return [];
-	}
-
-	return globalThis.astroAsset.staticImages?.entries();
-}
-
-interface GenerationData {
-	weight: {
-		before: number;
-		after: number;
-	};
-}
-
-export async function generateImage(
-	buildOpts: StaticBuildOptions,
-	options: ImageTransform,
-	filepath: string
-): Promise<GenerationData | undefined> {
-	if (!isESMImportedImage(options.src)) {
-		return undefined;
-	}
-
-	const imageService = (await getConfiguredImageService()) as LocalImageService;
-
-	let serverRoot: URL, clientRoot: URL;
-	if (buildOpts.settings.config.output === 'server') {
-		serverRoot = buildOpts.settings.config.build.server;
-		clientRoot = buildOpts.settings.config.build.client;
-	} else {
-		serverRoot = buildOpts.settings.config.outDir;
-		clientRoot = buildOpts.settings.config.outDir;
-	}
-
-	// The original file's path (the `src` attribute of the ESM imported image passed by the user)
-	const originalImagePath = options.src.src;
-
-	const fileData = await fs.promises.readFile(
-		new URL(
-			'.' +
-				prependForwardSlash(
-					join(buildOpts.settings.config.build.assets, basename(originalImagePath))
-				),
-			serverRoot
-		)
-	);
-	const resultData = await imageService.transform(fileData, { ...options, src: originalImagePath });
-
-	const finalFileURL = new URL('.' + filepath, clientRoot);
-	const finalFolderURL = new URL('./', finalFileURL);
-
-	await fs.promises.mkdir(finalFolderURL, { recursive: true });
-	await fs.promises.writeFile(finalFileURL, resultData.data);
-
-	return {
-		weight: {
-			before: Math.trunc(fileData.byteLength / 1024),
-			after: Math.trunc(resultData.data.byteLength / 1024),
+		srcSet: {
+			values: srcSets,
+			attribute: srcSets.map((srcSet) => `${srcSet.url} ${srcSet.descriptor}`).join(', '),
 		},
+		attributes:
+			service.getHTMLAttributes !== undefined
+				? await service.getHTMLAttributes(validatedOptions, imageConfig)
+				: {},
 	};
 }

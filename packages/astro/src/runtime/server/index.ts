@@ -1,7 +1,16 @@
+// NOTE: Although this entrypoint is exported, it is internal API and may change at any time.
+
 export { createComponent } from './astro-component.js';
 export { createAstro } from './astro-global.js';
 export { renderEndpoint } from './endpoint.js';
-export { escapeHTML, HTMLBytes, HTMLString, markHTMLString, unescapeHTML } from './escape.js';
+export {
+	escapeHTML,
+	HTMLBytes,
+	HTMLString,
+	isHTMLString,
+	markHTMLString,
+	unescapeHTML,
+} from './escape.js';
 export { renderJSX } from './jsx.js';
 export {
 	addAttribute,
@@ -9,22 +18,19 @@ export {
 	defineScriptVars,
 	Fragment,
 	maybeRenderHead,
-	renderAstroTemplateResult as renderAstroComponent,
+	renderTemplate as render,
 	renderComponent,
-	renderComponentToIterable,
 	Renderer as Renderer,
 	renderHead,
 	renderHTMLElement,
 	renderPage,
+	renderScript,
 	renderScriptElement,
 	renderSlot,
 	renderSlotToString,
-	renderStyleElement,
-	renderTemplate as render,
 	renderTemplate,
 	renderToString,
 	renderUniqueStylesheet,
-	stringifyChunk,
 	voidElementNames,
 } from './render/index.js';
 export type {
@@ -33,9 +39,10 @@ export type {
 	ComponentSlots,
 	RenderInstruction,
 } from './render/index.js';
+export { createTransitionScope, renderTransition } from './transition.js';
 
 import { markHTMLString } from './escape.js';
-import { addAttribute, Renderer } from './render/index.js';
+import { Renderer, addAttribute } from './render/index.js';
 
 export function mergeSlots(...slotted: unknown[]) {
 	const slots: Record<string, () => any> = {};
@@ -50,7 +57,7 @@ export function mergeSlots(...slotted: unknown[]) {
 	return slots;
 }
 
-/** @internal Associate JSX components with a specific renderer (see /src/vite-plugin-jsx/tag.ts) */
+/** @internal Associate JSX components with a specific renderer (see /packages/integrations/mdx/src/vite-plugin-mdx-postprocess.ts) */
 export function __astro_tag_component__(Component: unknown, rendererName: string) {
 	if (!Component) return;
 	if (typeof Component !== 'function') return;
@@ -63,9 +70,9 @@ export function __astro_tag_component__(Component: unknown, rendererName: string
 
 // Adds support for `<Component {...value} />
 export function spreadAttributes(
-	values: Record<any, any>,
+	values: Record<any, any> = {},
 	_name?: string,
-	{ class: scopedClassName }: { class?: string } = {}
+	{ class: scopedClassName }: { class?: string } = {},
 ) {
 	let output = '';
 	// If the compiler passes along a scoped class, merge with existing props or inject it

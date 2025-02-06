@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const NUM_POSTS = 10;
 const POSTS_DIR = './src/content/posts.generated';
@@ -23,8 +23,8 @@ export async function generatePosts({
 		Array.from(Array(numPosts).keys()).map((idx) => {
 			return fs.promises.writeFile(
 				`${postsDir}/post-${idx}${ext.startsWith('.') ? ext : `.${ext}`}`,
-				fs.readFileSync(new URL(`./templates/${template}`, import.meta.url), 'utf8')
+				fs.readFileSync(new URL(`./templates/${template}`, import.meta.url), 'utf8'),
 			);
-		})
+		}),
 	);
 }

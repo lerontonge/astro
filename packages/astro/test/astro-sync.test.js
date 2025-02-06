@@ -1,88 +1,248 @@
+// @ts-check
+import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { expect } from 'chai';
+import { beforeEach, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { loadFixture } from './test-utils.js';
 
+const createFixture = () => {
+	/** @type {Awaited<ReturnType<typeof loadFixture>>} */
+	let astroFixture;
+	/** @type {Record<string, string>} */
+	const writtenFiles = {};
+
+	/**
+	 * @param {string} path
+	 */
+	const getExpectedPath = (path) => fileURLToPath(new URL(path, astroFixture.config.root));
+
+	return {
+		/** @param {string} root */
+		async load(root) {
+			astroFixture = await loadFixture({ root });
+			return astroFixture.config;
+		},
+		clean() {
+			fs.rmSync(new URL('./.astro/', astroFixture.config.root), { force: true, recursive: true });
+		},
+		async whenSyncing() {
+			const fsMock = {
+				...fs,
+				/**
+				 * @param {fs.PathLike} path
+				 * @param {string} contents
+				 */
+				writeFileSync(path, contents) {
+					writtenFiles[path.toString()] = contents;
+					return fs.writeFileSync(path, contents);
+				},
+				promises: {
+					...fs.promises,
+					/**
+					 * @param {fs.PathLike} path
+					 * @param {string} contents
+					 */
+					writeFile(path, contents) {
+						writtenFiles[path.toString()] = contents;
+						return fs.promises.writeFile(path, contents);
+					},
+				},
+			};
+
+			await astroFixture.sync(
+				{ root: fileURLToPath(astroFixture.config.root) },
+				{
+					// @ts-ignore
+					fs: fsMock,
+				},
+			);
+		},
+		/** @param {string} path */
+		thenFileShouldExist(path) {
+			assert.equal(
+				writtenFiles.hasOwnProperty(getExpectedPath(path)),
+				true,
+				`${path} does not exist`,
+			);
+		},
+		/**
+		 * @param {string} path
+		 * @param {string} content
+		 * @param {string | undefined} error
+		 */
+		thenFileContentShouldInclude(path, content, error = undefined) {
+			assert.equal(writtenFiles[getExpectedPath(path)].includes(content), true, error);
+		},
+		/**
+		 * @param {string} path
+		 * @param {string} content
+		 * @param {string | undefined} error
+		 */
+		thenFileContentShouldNotInclude(path, content, error = undefined) {
+			assert.equal(writtenFiles[getExpectedPath(path)].includes(content), false, error);
+		},
+		/**
+		 * @param {string} path
+		 */
+		thenFileShouldBeValidTypescript(path) {
+			try {
+				const content = writtenFiles[getExpectedPath(path)];
+				const result = ts.transpileModule(content, {
+					compilerOptions: {
+						module: ts.ModuleKind.ESNext,
+					},
+				});
+				assert.equal(
+					result.outputText,
+					'',
+					`${path} should be valid TypeScript. Output: ${result.outputText}`,
+				);
+			} catch (error) {
+				assert.fail(`${path} is not valid TypeScript. Error: ${error.message}`);
+			}
+		},
+	};
+};
+
 describe('astro sync', () => {
+	/** @type {ReturnType<typeof createFixture>} */
 	let fixture;
-	before(async () => {
-		fixture = await loadFixture({ root: './fixtures/content-collections/' });
+	beforeEach(async () => {
+		fixture = createFixture();
 	});
 
-	it('Writes types to `.astro`', async () => {
-		let writtenFiles = {};
-		const fsMock = {
-			...fs,
-			promises: {
-				...fs.promises,
-				async writeFile(path, contents) {
-					writtenFiles[path] = contents;
-				},
-			},
-		};
-		await fixture.sync({ fs: fsMock });
-
-		const expectedTypesFile = new URL('.astro/types.d.ts', fixture.config.root).href;
-		expect(writtenFiles).to.haveOwnProperty(expectedTypesFile);
-		// smoke test `astro check` asserts whether content types pass.
-		expect(writtenFiles[expectedTypesFile]).to.include(
-			`declare module 'astro:content' {`,
-			'Types file does not include `astro:content` module declaration'
+	it('Writes `.astro/types.d.ts`', async () => {
+		await fixture.load('./fixtures/astro-basic/');
+		fixture.clean();
+		await fixture.whenSyncing();
+		fixture.thenFileShouldExist('.astro/types.d.ts');
+		fixture.thenFileContentShouldInclude(
+			'.astro/types.d.ts',
+			`/// <reference types="astro/client" />`,
 		);
 	});
 
-	it('Adds type reference to `src/env.d.ts`', async () => {
-		let writtenFiles = {};
-		const typesEnvPath = new URL('env.d.ts', fixture.config.srcDir).href;
-		const fsMock = {
-			...fs,
-			existsSync(path, ...args) {
-				if (path.toString() === typesEnvPath) {
-					return true;
-				}
-				return fs.existsSync(path, ...args);
-			},
-			promises: {
-				...fs.promises,
-				async readFile(path, ...args) {
-					if (path.toString() === typesEnvPath) {
-						return `/// <reference path="astro/client" />`;
-					} else {
-						return fs.promises.readFile(path, ...args);
-					}
-				},
-				async writeFile(path, contents) {
-					writtenFiles[path] = contents;
-				},
-			},
-		};
-		await fixture.sync({ fs: fsMock });
+	describe('Content collections', () => {
+		it('Adds reference to `.astro/types.d.ts`', async () => {
+			await fixture.load('./fixtures/content-collections/');
+			fixture.clean();
+			await fixture.whenSyncing();
+			fixture.thenFileShouldExist('.astro/types.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/types.d.ts',
+				`/// <reference path="content.d.ts" />`,
+			);
+			fixture.thenFileShouldExist('.astro/content.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/content.d.ts',
+				`declare module 'astro:content' {`,
+				'Types file does not include `astro:content` module declaration',
+			);
+			fixture.thenFileShouldBeValidTypescript('.astro/content.d.ts');
+		});
 
-		expect(writtenFiles, 'Did not try to update env.d.ts file.').to.haveOwnProperty(typesEnvPath);
-		expect(writtenFiles[typesEnvPath]).to.include(`/// <reference path="../.astro/types.d.ts" />`);
+		it('Writes types for empty collections', async () => {
+			await fixture.load('./fixtures/content-collections-empty-dir/');
+			fixture.clean();
+			await fixture.whenSyncing();
+			fixture.thenFileContentShouldInclude(
+				'.astro/content.d.ts',
+				`"blog": Record<string, {
+  id: string;
+  render(): Render[".md"];
+  slug: string;
+  body: string;
+  collection: "blog";
+  data: InferEntrySchema<"blog">;
+  rendered?: RenderedContent;
+  filePath?: string;`,
+				'Types file does not include empty collection type',
+			);
+			fixture.thenFileContentShouldInclude(
+				'.astro/content.d.ts',
+				`"blogMeta": Record<string, {
+  id: string;
+  body?: string;
+  collection: "blogMeta";
+  data: InferEntrySchema<"blogMeta">;
+  rendered?: RenderedContent;
+  filePath?: string;
+}>;`,
+				'Types file does not include empty collection type',
+			);
+		});
+
+		it('does not write individual types for entries when emulating legacy collections', async () => {
+			await fixture.load('./fixtures/content-collections/');
+			fixture.clean();
+			await fixture.whenSyncing();
+			fixture.thenFileContentShouldNotInclude('.astro/content.d.ts', 'id: "one.md"');
+		});
 	});
 
-	it('Writes `src/env.d.ts` if none exists', async () => {
-		let writtenFiles = {};
-		const typesEnvPath = new URL('env.d.ts', fixture.config.srcDir).href;
-		const fsMock = {
-			...fs,
-			existsSync(path, ...args) {
-				if (path.toString() === typesEnvPath) {
-					return false;
-				}
-				return fs.existsSync(path, ...args);
-			},
-			promises: {
-				...fs.promises,
-				async writeFile(path, contents) {
-					writtenFiles[path] = contents;
-				},
-			},
-		};
-		await fixture.sync({ fs: fsMock });
+	describe('astro:env', () => {
+		it('Adds reference to `.astro/types.d.ts`', async () => {
+			await fixture.load('./fixtures/astro-env/');
+			fixture.clean();
+			await fixture.whenSyncing();
+			fixture.thenFileShouldExist('.astro/types.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/types.d.ts',
+				`/// <reference path="env.d.ts" />`,
+			);
+			fixture.thenFileShouldExist('.astro/env.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/env.d.ts',
+				`declare module 'astro:env/client' {`,
+				'Types file does not include `astro:env` module declaration',
+			);
+		});
 
-		expect(writtenFiles, 'Did not try to write env.d.ts file.').to.haveOwnProperty(typesEnvPath);
-		expect(writtenFiles[typesEnvPath]).to.include(`/// <reference types="astro/client" />`);
-		expect(writtenFiles[typesEnvPath]).to.include(`/// <reference path="../.astro/types.d.ts" />`);
+		it('Does not throw if a public variable is required', async () => {
+			try {
+				await fixture.load('./fixtures/astro-env-required-public/');
+				fixture.clean();
+				await fixture.whenSyncing();
+				assert.ok(true);
+			} catch {
+				assert.fail();
+			}
+		});
+		it('Does not throw if a virtual module is imported in content.config.ts or import.meta.env is not loaded', async () => {
+			try {
+				await fixture.load('./fixtures/astro-env-content-collections/');
+				fixture.clean();
+				fs.writeFileSync(
+					new URL('./fixtures/astro-env-content-collections/.env', import.meta.url),
+					'BAR=abc',
+					'utf-8',
+				);
+				await fixture.whenSyncing();
+				assert.ok(true);
+			} catch {
+				assert.fail();
+			}
+		});
+	});
+
+	describe('astro:actions', () => {
+		it('Adds reference to `.astro/types.d.ts`', async () => {
+			await fixture.load('./fixtures/actions/');
+			fixture.clean();
+			await fixture.whenSyncing();
+			fixture.thenFileShouldExist('.astro/types.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/types.d.ts',
+				`/// <reference path="actions.d.ts" />`,
+			);
+			fixture.thenFileShouldExist('.astro/actions.d.ts');
+			fixture.thenFileContentShouldInclude(
+				'.astro/actions.d.ts',
+				`declare module "astro:actions" {`,
+				'Types file does not include `astro:actions` module declaration',
+			);
+			fixture.thenFileShouldBeValidTypescript('.astro/actions.d.ts');
+		});
 	});
 });

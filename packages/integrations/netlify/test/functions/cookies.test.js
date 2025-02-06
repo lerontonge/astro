@@ -1,43 +1,53 @@
-import { expect } from 'chai';
-import { load as cheerioLoad } from 'cheerio';
-import { loadFixture, testIntegration } from './test-utils.js';
-import netlifyAdapter from '../../dist/index.js';
-import { fileURLToPath } from 'url';
+import * as assert from 'node:assert/strict';
+import { before, describe, it } from 'node:test';
+import { loadFixture } from '../../../../astro/test/test-utils.js';
 
-describe('Cookies', () => {
-	/** @type {import('../../../astro/test/test-utils').Fixture} */
-	let fixture;
+describe(
+	'Cookies',
+	() => {
+		let fixture;
 
-	before(async () => {
-		fixture = await loadFixture({
-			root: new URL('./fixtures/cookies/', import.meta.url).toString(),
-			output: 'server',
-			adapter: netlifyAdapter({
-				dist: new URL('./fixtures/cookies/dist/', import.meta.url),
-			}),
-			site: `http://example.com`,
-			integrations: [testIntegration()],
+		before(async () => {
+			fixture = await loadFixture({ root: new URL('./fixtures/cookies/', import.meta.url) });
+			await fixture.build();
 		});
-		await fixture.build();
-	});
 
-	it('Can set multiple', async () => {
-		const entryURL = new URL(
-			'./fixtures/cookies/.netlify/functions-internal/entry.mjs',
-			import.meta.url
-		);
-		const { handler } = await import(entryURL);
-		const resp = await handler({
-			httpMethod: 'POST',
-			headers: {},
-			rawUrl: 'http://example.com/login',
-			body: '{}',
-			isBase64Encoded: false,
+		it('Can set multiple', async () => {
+			const entryURL = new URL(
+				'./fixtures/cookies/.netlify/v1/functions/ssr/ssr.mjs',
+				import.meta.url,
+			);
+			const { default: handler } = await import(entryURL);
+			const resp = await handler(
+				new Request('http://example.com/login', { method: 'POST', body: '{}' }),
+				{},
+			);
+			assert.equal(resp.status, 301);
+			assert.equal(resp.headers.get('location'), '/');
+			assert.deepEqual(resp.headers.getSetCookie(), ['foo=foo; HttpOnly', 'bar=bar; HttpOnly']);
 		});
-		expect(resp.statusCode).to.equal(301);
-		expect(resp.headers.location).to.equal('/');
-		expect(resp.multiValueHeaders).to.be.deep.equal({
-			'set-cookie': ['foo=foo; HttpOnly', 'bar=bar; HttpOnly'],
+
+		it('renders dynamic 404 page', async () => {
+			const entryURL = new URL(
+				'./fixtures/cookies/.netlify/v1/functions/ssr/ssr.mjs',
+				import.meta.url,
+			);
+			const { default: handler } = await import(entryURL);
+			const resp = await handler(
+				new Request('http://example.com/nonexistant-page', {
+					headers: {
+						'x-test': 'bar',
+					},
+				}),
+				{},
+			);
+			assert.equal(resp.status, 404);
+			const text = await resp.text();
+			assert.equal(text.includes('This is my custom 404 page'), true);
+			assert.equal(text.includes('x-test: bar'), true);
 		});
-	});
-});
+	},
+	{
+		timeout: 120000,
+	},
+);

@@ -1,76 +1,115 @@
-import { bold } from 'kleur/colors';
+import { extname } from 'node:path';
 import MagicString from 'magic-string';
-import mime from 'mime/lite.js';
-import fs from 'node:fs/promises';
-import { Readable } from 'node:stream';
-import { fileURLToPath } from 'node:url';
 import type * as vite from 'vite';
-import { normalizePath } from 'vite';
-import type { AstroPluginOptions, ImageTransform } from '../@types/astro';
-import { error } from '../core/logger/core.js';
-import { appendForwardSlash, joinPaths, prependForwardSlash } from '../core/path.js';
-import { VIRTUAL_MODULE_ID, VIRTUAL_SERVICE_ID } from './consts.js';
-import { isESMImportedImage } from './internal.js';
-import { isLocalService } from './services/service.js';
-import { emitESMImage } from './utils/emitAsset.js';
-import { imageMetadata } from './utils/metadata.js';
-import { getOrigQueryParams } from './utils/queryParams.js';
+import { AstroError, AstroErrorData } from '../core/errors/index.js';
+import {
+	appendForwardSlash,
+	joinPaths,
+	prependForwardSlash,
+	removeBase,
+	removeQueryString,
+} from '../core/path.js';
+import { normalizePath } from '../core/viteUtils.js';
+import type { AstroSettings } from '../types/astro.js';
+import { VALID_INPUT_FORMATS, VIRTUAL_MODULE_ID, VIRTUAL_SERVICE_ID } from './consts.js';
+import type { ImageTransform } from './types.js';
+import { getAssetsPrefix } from './utils/getAssetsPrefix.js';
+import { isESMImportedImage } from './utils/imageKind.js';
+import { emitESMImage } from './utils/node/emitAsset.js';
+import { getProxyCode } from './utils/proxy.js';
+import { makeSvgComponent } from './utils/svg.js';
 import { hashTransform, propsToFilename } from './utils/transformToPath.js';
 
 const resolvedVirtualModuleId = '\0' + VIRTUAL_MODULE_ID;
 
-export default function assets({
-	settings,
-	logging,
-	mode,
-}: AstroPluginOptions & { mode: string }): vite.Plugin[] {
-	let resolvedConfig: vite.ResolvedConfig;
+const assetRegex = new RegExp(`\\.(${VALID_INPUT_FORMATS.join('|')})`, 'i');
+const assetRegexEnds = new RegExp(`\\.(${VALID_INPUT_FORMATS.join('|')})$`, 'i');
+const addStaticImageFactory = (
+	settings: AstroSettings,
+): typeof globalThis.astroAsset.addStaticImage => {
+	return (options, hashProperties, originalFSPath) => {
+		if (!globalThis.astroAsset.staticImages) {
+			globalThis.astroAsset.staticImages = new Map<
+				string,
+				{
+					originalSrcPath: string;
+					transforms: Map<string, { finalPath: string; transform: ImageTransform }>;
+				}
+			>();
+		}
 
-	globalThis.astroAsset = {};
+		// Rollup will copy the file to the output directory, as such this is the path in the output directory, including the asset prefix / base
+		const ESMImportedImageSrc = isESMImportedImage(options.src) ? options.src.src : options.src;
+		const fileExtension = extname(ESMImportedImageSrc);
+		const assetPrefix = getAssetsPrefix(fileExtension, settings.config.build.assetsPrefix);
 
-	const UNSUPPORTED_ADAPTERS = new Set([
-		'@astrojs/cloudflare',
-		'@astrojs/deno',
-		'@astrojs/netlify/edge-functions',
-		'@astrojs/vercel/edge',
-	]);
-
-	const adapterName = settings.config.adapter?.name;
-	if (
-		['astro/assets/services/sharp', 'astro/assets/services/squoosh'].includes(
-			settings.config.image.service
-		) &&
-		adapterName &&
-		UNSUPPORTED_ADAPTERS.has(adapterName)
-	) {
-		error(
-			logging,
-			'assets',
-			`The currently selected adapter \`${adapterName}\` does not run on Node, however the currently used image service depends on Node built-ins. ${bold(
-				'Your project will NOT be able to build.'
-			)}`
+		// This is the path to the original image, from the dist root, without the base or the asset prefix (e.g. /_astro/image.hash.png)
+		const finalOriginalPath = removeBase(
+			removeBase(ESMImportedImageSrc, settings.config.base),
+			assetPrefix,
 		);
-	}
 
+		const hash = hashTransform(options, settings.config.image.service.entrypoint, hashProperties);
+
+		let finalFilePath: string;
+		let transformsForPath = globalThis.astroAsset.staticImages.get(finalOriginalPath);
+		const transformForHash = transformsForPath?.transforms.get(hash);
+
+		// If the same image has already been transformed with the same options, we'll reuse the final path
+		if (transformsForPath && transformForHash) {
+			finalFilePath = transformForHash.finalPath;
+		} else {
+			finalFilePath = prependForwardSlash(
+				joinPaths(
+					isESMImportedImage(options.src) ? '' : settings.config.build.assets,
+					prependForwardSlash(propsToFilename(finalOriginalPath, options, hash)),
+				),
+			);
+
+			if (!transformsForPath) {
+				globalThis.astroAsset.staticImages.set(finalOriginalPath, {
+					originalSrcPath: originalFSPath,
+					transforms: new Map(),
+				});
+				transformsForPath = globalThis.astroAsset.staticImages.get(finalOriginalPath)!;
+			}
+
+			transformsForPath.transforms.set(hash, {
+				finalPath: finalFilePath,
+				transform: options,
+			});
+		}
+
+		// The paths here are used for URLs, so we need to make sure they have the proper format for an URL
+		// (leading slash, prefixed with the base / assets prefix, encoded, etc)
+		if (settings.config.build.assetsPrefix) {
+			return encodeURI(joinPaths(assetPrefix, finalFilePath));
+		} else {
+			return encodeURI(prependForwardSlash(joinPaths(settings.config.base, finalFilePath)));
+		}
+	};
+};
+
+export default function assets({ settings }: { settings: AstroSettings }): vite.Plugin[] {
+	let resolvedConfig: vite.ResolvedConfig;
+	let shouldEmitFile = false;
+	let isBuild = false;
+
+	globalThis.astroAsset = {
+		referencedImages: new Set(),
+	};
+
+	const imageComponentPrefix = settings.config.experimental.responsiveImages ? 'Responsive' : '';
 	return [
-		// Expose the components and different utilities from `astro:assets` and handle serving images from `/_image` in dev
+		// Expose the components and different utilities from `astro:assets`
 		{
 			name: 'astro:assets',
-			config() {
-				return {
-					resolve: {
-						alias: [
-							{
-								find: /^~\/assets\/(.+)$/,
-								replacement: fileURLToPath(new URL('./assets/$1', settings.config.srcDir)),
-							},
-						],
-					},
-				};
+			config(_, env) {
+				isBuild = env.command === 'build';
 			},
 			async resolveId(id) {
 				if (id === VIRTUAL_SERVICE_ID) {
-					return await this.resolve(settings.config.image.service);
+					return await this.resolve(settings.config.image.service.entrypoint);
 				}
 				if (id === VIRTUAL_MODULE_ID) {
 					return resolvedVirtualModuleId;
@@ -78,111 +117,41 @@ export default function assets({
 			},
 			load(id) {
 				if (id === resolvedVirtualModuleId) {
-					return `
-					export { getImage, getConfiguredImageService, isLocalService } from "astro/assets";
-					export { default as Image } from "astro/components/Image.astro";
+					return /* ts */ `
+					export { getConfiguredImageService, isLocalService } from "astro/assets";
+					import { getImage as getImageInternal } from "astro/assets";
+					export { default as Image } from "astro/components/${imageComponentPrefix}Image.astro";
+					export { default as Picture } from "astro/components/${imageComponentPrefix}Picture.astro";
+					export { inferRemoteSize } from "astro/assets/utils/inferRemoteSize.js";
+
+					export const imageConfig = ${JSON.stringify({ ...settings.config.image, experimentalResponsiveImages: settings.config.experimental.responsiveImages })};
+					// This is used by the @astrojs/node integration to locate images.
+					// It's unused on other platforms, but on some platforms like Netlify (and presumably also Vercel)
+					// new URL("dist/...") is interpreted by the bundler as a signal to include that directory
+					// in the Lambda bundle, which would bloat the bundle with images.
+					// To prevent this, we mark the URL construction as pure,
+					// so that it's tree-shaken away for all platforms that don't need it.
+					export const outDir = /* #__PURE__ */ new URL(${JSON.stringify(
+						new URL(
+							settings.buildOutput === 'server'
+								? settings.config.build.client
+								: settings.config.outDir,
+						),
+					)});
+					export const assetsDir = /* #__PURE__ */ new URL(${JSON.stringify(
+						settings.config.build.assets,
+					)}, outDir);
+					export const getImage = async (options) => await getImageInternal(options, imageConfig);
 				`;
 				}
 			},
-			// Handle serving images during development
-			configureServer(server) {
-				server.middlewares.use(async (req, res, next) => {
-					if (req.url?.startsWith('/_image')) {
-						// If the currently configured service isn't a local service, we don't need to do anything here.
-						// TODO: Support setting a specific service through a prop on Image / a parameter in getImage
-						if (!isLocalService(globalThis.astroAsset.imageService)) {
-							return next();
-						}
-
-						const url = new URL(req.url, 'file:');
-						const filePath = url.searchParams.get('href');
-
-						if (!filePath) {
-							return next();
-						}
-
-						const filePathURL = new URL('.' + filePath, settings.config.root);
-						const file = await fs.readFile(filePathURL);
-
-						// Get the file's metadata from the URL
-						let meta = getOrigQueryParams(filePathURL.searchParams);
-
-						// If we don't have them (ex: the image came from Markdown, let's calculate them again)
-						if (!meta) {
-							meta = await imageMetadata(filePathURL, file);
-
-							if (!meta) {
-								return next();
-							}
-						}
-
-						const transform = await globalThis.astroAsset.imageService.parseURL(url);
-
-						if (transform === undefined) {
-							error(logging, 'image', `Failed to parse transform for ${url}`);
-						}
-
-						// if no transforms were added, the original file will be returned as-is
-						let data = file;
-						let format: string = meta.format;
-
-						if (transform) {
-							const result = await globalThis.astroAsset.imageService.transform(file, transform);
-							data = result.data;
-							format = result.format;
-						}
-
-						res.setHeader('Content-Type', mime.getType(format) ?? `image/${format}`);
-						res.setHeader('Cache-Control', 'max-age=360000');
-
-						const stream = Readable.from(data);
-						return stream.pipe(res);
-					}
-
-					return next();
-				});
-			},
 			buildStart() {
-				if (mode != 'build') {
-					return;
-				}
-
-				globalThis.astroAsset.addStaticImage = (options) => {
-					if (!globalThis.astroAsset.staticImages) {
-						globalThis.astroAsset.staticImages = new Map<
-							string,
-							{ path: string; options: ImageTransform }
-						>();
-					}
-
-					const hash = hashTransform(options, settings.config.image.service);
-
-					let filePath: string;
-					if (globalThis.astroAsset.staticImages.has(hash)) {
-						filePath = globalThis.astroAsset.staticImages.get(hash)!.path;
-					} else {
-						// If the image is not imported, we can return the path as-is, since static references
-						// should only point ot valid paths for builds or remote images
-						if (!isESMImportedImage(options.src)) {
-							return options.src;
-						}
-
-						filePath = prependForwardSlash(
-							joinPaths(settings.config.build.assets, propsToFilename(options, hash))
-						);
-						globalThis.astroAsset.staticImages.set(hash, { path: filePath, options: options });
-					}
-
-					if (settings.config.build.assetsPrefix) {
-						return joinPaths(settings.config.build.assetsPrefix, filePath);
-					} else {
-						return prependForwardSlash(joinPaths(settings.config.base, filePath));
-					}
-				};
+				if (!isBuild) return;
+				globalThis.astroAsset.addStaticImage = addStaticImageFactory(settings);
 			},
 			// In build, rewrite paths to ESM imported images in code to their final location
 			async renderChunk(code) {
-				const assetUrlRE = /__ASTRO_ASSET_IMAGE__([a-z\d]{8})__(?:_(.*?)__)?/g;
+				const assetUrlRE = /__ASTRO_ASSET_IMAGE__([\w$]{8})__(?:_(.*?)__)?/g;
 
 				let match;
 				let s;
@@ -191,9 +160,9 @@ export default function assets({
 					const [full, hash, postfix = ''] = match;
 
 					const file = this.getFileName(hash);
-					const prefix = settings.config.build.assetsPrefix
-						? appendForwardSlash(settings.config.build.assetsPrefix)
-						: resolvedConfig.base;
+					const fileExtension = extname(file);
+					const pf = getAssetsPrefix(fileExtension, settings.config.build.assetsPrefix);
+					const prefix = pf ? appendForwardSlash(pf) : resolvedConfig.base;
 					const outputFilepath = prefix + normalizePath(file + postfix);
 
 					s.overwrite(match.index, match.index + full.length, outputFilepath);
@@ -202,7 +171,7 @@ export default function assets({
 				if (s) {
 					return {
 						code: s.toString(),
-						map: resolvedConfig.build.sourcemap ? s.generateMap({ hires: true }) : null,
+						map: resolvedConfig.build.sourcemap ? s.generateMap({ hires: 'boundary' }) : null,
 					};
 				} else {
 					return null;
@@ -213,13 +182,64 @@ export default function assets({
 		{
 			name: 'astro:assets:esm',
 			enforce: 'pre',
+			config(_, env) {
+				shouldEmitFile = env.command === 'build';
+			},
 			configResolved(viteConfig) {
 				resolvedConfig = viteConfig;
 			},
-			async load(id) {
-				if (/\.(jpeg|jpg|png|tiff|webp|gif|svg)$/.test(id)) {
-					const meta = await emitESMImage(id, this.meta.watchMode, this.emitFile, settings);
-					return `export default ${JSON.stringify(meta)}`;
+			async load(id, options) {
+				if (assetRegex.test(id)) {
+					if (!globalThis.astroAsset.referencedImages)
+						globalThis.astroAsset.referencedImages = new Set();
+
+					if (id !== removeQueryString(id)) {
+						// If our import has any query params, we'll let Vite handle it, nonetheless we'll make sure to not delete it
+						// See https://github.com/withastro/astro/issues/8333
+						globalThis.astroAsset.referencedImages.add(removeQueryString(id));
+						return;
+					}
+
+					// If the requested ID doesn't end with a valid image extension, we'll let Vite handle it
+					if (!assetRegexEnds.test(id)) {
+						return;
+					}
+
+					const emitFile = shouldEmitFile ? this.emitFile : undefined;
+					const imageMetadata = await emitESMImage(
+						id,
+						this.meta.watchMode,
+						!!settings.config.experimental.svg,
+						emitFile,
+					);
+
+					if (!imageMetadata) {
+						throw new AstroError({
+							...AstroErrorData.ImageNotFound,
+							message: AstroErrorData.ImageNotFound.message(id),
+						});
+					}
+
+					if (settings.config.experimental.svg && /\.svg$/.test(id)) {
+						const { contents, ...metadata } = imageMetadata;
+						// We know that the contents are present, as we only emit this property for SVG files
+						return makeSvgComponent(metadata, contents!, {
+							mode: settings.config.experimental.svg.mode,
+						});
+					}
+
+					// We can only reliably determine if an image is used on the server, as we need to track its usage throughout the entire build.
+					// Since you cannot use image optimization on the client anyway, it's safe to assume that if the user imported
+					// an image on the client, it should be present in the final build.
+					if (options?.ssr) {
+						return `export default ${getProxyCode(
+							imageMetadata,
+							settings.buildOutput === 'server',
+						)}`;
+					} else {
+						globalThis.astroAsset.referencedImages.add(imageMetadata.fsPath);
+						return `export default ${JSON.stringify(imageMetadata)}`;
+					}
 				}
 			},
 		},
