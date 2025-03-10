@@ -1,5 +1,6 @@
 import type { TransitionBeforePreparationEvent } from './events.js';
 import { TRANSITION_AFTER_SWAP, doPreparation, doSwap } from './events.js';
+import { detectScriptExecuted } from './swap-functions.js';
 import type { Direction, Fallback, Options } from './types.js';
 
 type State = {
@@ -518,6 +519,7 @@ async function transition(
 				// This cancels all animations of the simulation
 				document.documentElement.removeAttribute(OLD_NEW_ATTR);
 			},
+			types: new Set<string>(), // empty by default
 		};
 	}
 	// In earlier versions was then'ed on viewTransition.ready which would not execute
@@ -646,7 +648,7 @@ if (inBrowser) {
 		}
 	}
 	for (const script of document.getElementsByTagName('script')) {
-		script.dataset.astroExec = '';
+		detectScriptExecuted(script);
 	}
 }
 
