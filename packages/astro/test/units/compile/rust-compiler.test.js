@@ -132,7 +132,7 @@ console.log('hello');
 			() => compileWithRust('<p>Unclosed tag'),
 			(err) => {
 				assert.ok(err.message || err.name);
-				assert.ok(err.message.includes( "Unexpected token"));
+				assert.ok(err.message.includes('Unexpected token'));
 				return true;
 			},
 		);
