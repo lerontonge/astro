@@ -21,10 +21,15 @@ import {
 import { parseEnv } from 'node:util';
 import { sessionDrivers } from 'astro/config';
 import { createCloudflarePrerenderer } from './prerenderer.js';
+import { createRequire } from 'node:module';
 
 export type { Runtime } from './utils/handler.js';
 
-export type Options = {
+export interface Options
+	extends Pick<
+		PluginConfig,
+		'auxiliaryWorkers' | 'configPath' | 'inspectorPort' | 'persistState' | 'remoteBindings'
+	> {
 	/** Options for handling images. */
 	imageService?: ImageServiceConfig;
 
@@ -49,18 +54,26 @@ export type Options = {
 	 * See https://developers.cloudflare.com/images/transform-images/bindings/ for more details.
 	 */
 	imagesBindingName?: string;
-};
 
-export default function createIntegration(args?: Options): AstroIntegration {
+	experimental?: Pick<
+		NonNullable<PluginConfig['experimental']>,
+		'headersAndRedirectsDevModeSupport'
+	>;
+}
+
+export default function createIntegration({
+	imageService,
+	sessionKVBindingName = DEFAULT_SESSION_KV_BINDING_NAME,
+	imagesBindingName = DEFAULT_IMAGES_BINDING_NAME,
+	...cloudflareOptions
+}: Options = {}): AstroIntegration {
 	let _config: AstroConfig;
 
 	let _routes: IntegrationResolvedRoute[];
 	let _isFullyStatic = false;
+	let cfPluginConfig: PluginConfig;
 
-	const sessionKVBindingName = args?.sessionKVBindingName ?? DEFAULT_SESSION_KV_BINDING_NAME;
-	const imagesBindingName = args?.imagesBindingName ?? DEFAULT_IMAGES_BINDING_NAME;
-
-	const { buildService, runtimeService } = normalizeImageServiceConfig(args?.imageService);
+	const { buildService, runtimeService } = normalizeImageServiceConfig(imageService);
 	const needsImagesBinding = runtimeService === 'cloudflare-binding';
 
 	return {
@@ -97,17 +110,17 @@ export default function createIntegration(args?: Options): AstroIntegration {
 						ttl: session?.ttl,
 					};
 				}
+
 				// In dev, `compile` needs the IMAGES binding for real transforms
 				// (the image-transform-endpoint uses it). At build time,
 				// `compile` uses Sharp on the Node side instead.
 				const needsImagesBindingForDev = isCompile && command === 'dev';
 
-				const cfPluginConfig: PluginConfig = {
-					viteEnvironment: { name: 'ssr' },
+				cfPluginConfig = {
 					config: cloudflareConfigCustomizer({
-						sessionKVBindingName: args?.sessionKVBindingName,
+						sessionKVBindingName,
 						imagesBindingName:
-							needsImagesBinding || needsImagesBindingForDev ? args?.imagesBindingName : false,
+							needsImagesBinding || needsImagesBindingForDev ? imagesBindingName : false,
 					}),
 					experimental: {
 						prerenderWorker: {
@@ -125,6 +138,12 @@ export default function createIntegration(args?: Options): AstroIntegration {
 					},
 				};
 
+				// The preview entrypoint uses Cloudflare's vite plugin and so it needs access
+				// to the config. But there's no proper API for this so we use globalThis.
+				if (command === 'preview') {
+					globalThis.astroCloudflareOptions = cfPluginConfig;
+				}
+
 				updateConfig({
 					build: {
 						redirects: false,
@@ -132,7 +151,7 @@ export default function createIntegration(args?: Options): AstroIntegration {
 					session,
 					vite: {
 						plugins: [
-							cfVitePlugin(cfPluginConfig),
+							cfVitePlugin({ ...cfPluginConfig, viteEnvironment: { name: 'ssr' } }),
 							{
 								name: '@astrojs/cloudflare:cf-imports',
 								enforce: 'pre',
@@ -229,8 +248,12 @@ export default function createIntegration(args?: Options): AstroIntegration {
 							}),
 						],
 					},
-					image: setImageConfig(args?.imageService, config.image, command, logger),
+					image: setImageConfig(imageService, config.image, command, logger),
 				});
+
+				if (cloudflareOptions.configPath) {
+					addWatchFile(createRequire(import.meta.url).resolve(cloudflareOptions.configPath));
+				}
 
 				addWatchFile(new URL('./wrangler.toml', config.root));
 				addWatchFile(new URL('./wrangler.json', config.root));
@@ -298,6 +321,7 @@ export default function createIntegration(args?: Options): AstroIntegration {
 						clientDir: _config.build.client,
 						base: _config.base,
 						trailingSlash: _config.trailingSlash,
+						cfPluginConfig,
 						hasCompileImageService: buildService === 'compile',
 					}),
 				);
@@ -322,9 +346,7 @@ export default function createIntegration(args?: Options): AstroIntegration {
 					// in a global way, so we shim their access as `process.env.*`. This is not the recommended way for users to access environment variables. But we'll add this for compatibility for chosen variables. Mainly to support `@astrojs/db`
 					vite.define = {
 						'process.env': 'process.env',
-						'globalThis.__ASTRO_IMAGES_BINDING_NAME': JSON.stringify(
-							args?.imagesBindingName ?? 'IMAGES',
-						),
+						'globalThis.__ASTRO_IMAGES_BINDING_NAME': JSON.stringify(imagesBindingName),
 						...vite.define,
 					};
 				}
