@@ -79,7 +79,12 @@ describe('astro cli', () => {
 		},
 		async () => {
 			const projectRootURL = new URL('./fixtures/astro-check-no-errors/', import.meta.url);
-			const result = await cli('check', '--root', fileURLToPath(projectRootURL), '--noSync').getResult();
+			const result = await cli(
+				'check',
+				'--root',
+				fileURLToPath(projectRootURL),
+				'--noSync',
+			).getResult();
 
 			assert.equal(result.stdout.includes('0 errors'), true);
 		},
@@ -92,7 +97,12 @@ describe('astro cli', () => {
 		},
 		async () => {
 			const projectRootURL = new URL('./fixtures/astro-check-errors/', import.meta.url);
-			const result = await cli('check', '--root', fileURLToPath(projectRootURL), '--noSync').getResult();
+			const result = await cli(
+				'check',
+				'--root',
+				fileURLToPath(projectRootURL),
+				'--noSync',
+			).getResult();
 
 			assert.equal(result.stdout.includes('1 error'), true);
 		},
