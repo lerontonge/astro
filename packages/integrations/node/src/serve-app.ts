@@ -113,7 +113,10 @@ export function createAppHandler(app: BaseApp, options: Options): RequestHandler
 		} else if (next) {
 			return next();
 		} else {
-			const response = await app.render(request, { addCookieHeader: true, prerenderedErrorPageFetch });
+			const response = await app.render(request, {
+				addCookieHeader: true,
+				prerenderedErrorPageFetch,
+			});
 			await writeResponse(response, res);
 		}
 	};

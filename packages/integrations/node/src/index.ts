@@ -1,11 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { writeJson } from '@astrojs/internal-helpers/fs';
-import type {
-	AstroAdapter,
-	AstroConfig,
-	AstroIntegration,
-	RouteToHeaders,
-} from 'astro';
+import type { AstroAdapter, AstroConfig, AstroIntegration, RouteToHeaders } from 'astro';
 import { AstroError } from 'astro/errors';
 import { STATIC_HEADERS_FILE } from './shared.js';
 import type { NodeAppHeadersJson, Options, UserOptions } from './types.js';

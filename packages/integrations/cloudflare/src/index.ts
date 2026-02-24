@@ -61,7 +61,7 @@ export default function createIntegration(args?: Options): AstroIntegration {
 		hooks: {
 			'astro:config:setup': ({ command, config, updateConfig, logger, addWatchFile }) => {
 				if (!!process.versions.webcontainer) {
-					throw new Error('`workerd` does not run on Stackblitz.')
+					throw new Error('`workerd` does not run on Stackblitz.');
 				}
 
 				let session = config.session;
