@@ -15,5 +15,6 @@ export default defineConfig({
     imageService: { build: 'compile', runtime: 'cloudflare-binding' }
   }),
 });
+```
 
 See the [Cloudflare adapter `imageService` docs](/en/guides/integrations-guide/cloudflare/#imageservice) for more information about configuring your image service.
