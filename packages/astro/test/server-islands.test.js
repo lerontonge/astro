@@ -256,8 +256,14 @@ describe('Server islands', () => {
 				const islandRes = await fixture.fetch(urlMatch[1]);
 				assert.equal(islandRes.status, 200);
 				const islandHtml = await islandRes.text();
-				assert.ok(islandHtml.includes('<script'), 'island response should include the script tag from the slotted component');
-				assert.ok(islandHtml.includes('data-increment'), 'island response should include the slotted component HTML');
+				assert.ok(
+					islandHtml.includes('<script'),
+					'island response should include the script tag from the slotted component',
+				);
+				assert.ok(
+					islandHtml.includes('data-increment'),
+					'island response should include the slotted component HTML',
+				);
 			});
 		});
 
