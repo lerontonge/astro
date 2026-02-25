@@ -622,6 +622,9 @@ export interface AstroUserConfig<
 		 * Each pattern can specify `protocol`, `hostname`, and `port`. All three are validated if provided.
 		 * The patterns support wildcards for flexible hostname matching:
 		 *
+		 * - `*.example.com` - matches exactly one subdomain level (e.g., `sub.example.com` but not `deep.sub.example.com`)
+		 * - `**.example.com` - matches any subdomain depth (e.g., both `sub.example.com` and `deep.sub.example.com`)
+		 *
 		 * ```js
 		 * {
 		 *   security: {
@@ -637,6 +640,17 @@ export interface AstroUserConfig<
 		 *         port: '443'
 		 *       }
 		 *     ]
+		 *   }
+		 * }
+		 * ```
+		 *
+		 * In some specific contexts (e.g., applications behind trusted reverse proxies with dynamic domains), you may need to allow all domains. To do this, use an empty object:
+		 *
+		 * ```js
+		 * {
+		 *   security: {
+		 *     // Allow any domain - use this only when necessary
+		 *     allowedDomains: [{}]
 		 *   }
 		 * }
 		 * ```
