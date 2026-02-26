@@ -107,6 +107,7 @@ export type SSRManifest = {
 	sessionDriver?: () => Promise<{ default: SessionDriverFactory | null }>;
 	checkOrigin: boolean;
 	allowedDomains?: Partial<RemotePattern>[];
+	actionBodySizeLimit: number;
 	sessionConfig?: SSRManifestSession;
 	cacheDir: URL;
 	srcDir: URL;
