@@ -420,11 +420,20 @@ export default function netlifyIntegration(
 		await writeFile(
 			new URL('./ssr.mjs', ssrOutputDir()),
 			`
-			import { config, createHandler } from './${handler}';
+			import { createHandler } from './${handler}';
 
 			export default createHandler(${JSON.stringify({ notFoundContent })});
 
-			export { config };
+			// The config must be inlined here instead of imported because Netlify
+			// parses this file statically to read the config.
+			export const config = {
+				includedFiles: ['**/*'],
+				name: 'Astro SSR',
+				nodeBundler: 'none',
+				generator: '@astrojs/netlify@${packageVersion}',
+				path: '/*',
+				preferStatic: true,
+			};
 		`,
 		);
 	}
@@ -652,7 +661,6 @@ export default function netlifyIntegration(
 							createConfigPlugin({
 								middlewareSecret,
 								cacheOnDemandPages: !!integrationConfig?.cacheOnDemandPages,
-								packageVersion,
 							}),
 						],
 						ssr: {
