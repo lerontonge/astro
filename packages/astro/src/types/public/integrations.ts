@@ -86,7 +86,7 @@ export type MiddlewareMode = 'classic' | 'edge';
 export interface AstroAdapterFeatures {
 	/**
 	 * Creates an edge function that will communicate with the Astro middleware
-	 * 
+	 *
 	 * @deprecated Use `middlewareMode: 'edge'` instead
 	 */
 	edgeMiddleware?: boolean;
@@ -95,7 +95,7 @@ export interface AstroAdapterFeatures {
 	 * Determines when and how middleware executes:
 	 * - `'classic'` (default): Middleware runs for prerendered pages at build time, and for SSR pages at request time. Does not run for prerendered pages at request time.
 	 * - `'edge'`: Middleware is deployed as a separate edge function. Middleware code will not be bundled and imported by all pages during the build.
-	 * 
+	 *
 	 * @default 'classic'
 	 */
 	middlewareMode?: MiddlewareMode;
