@@ -7,7 +7,7 @@ import { loadFixture } from './test-utils.js';
 describe('CSP', () => {
 	/** @type {import('./test-utils.js').Fixture} */
 	let fixture;
-	
+
 	it('should generate hashes for inline styles', async () => {
 		fixture = await loadFixture({
 			root: './fixtures/csp/',
@@ -64,7 +64,6 @@ describe('CSP', () => {
 			'https://fonts.cdn.test.com',
 		]);
 	});
-
 
 	it('should generate hashes for Image component inline styles when using layout', async () => {
 		fixture = await loadFixture({
