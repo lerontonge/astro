@@ -81,11 +81,15 @@ export function astroContentAssetPropagationPlugin({
 			const ssrEnv = server.environments[ASTRO_VITE_ENVIRONMENT_NAMES.ssr];
 			if (isRunnableDevEnvironment(ssrEnv)) {
 				environment = ssrEnv;
-			} else if (isRunnableDevEnvironment(server.environments[ASTRO_VITE_ENVIRONMENT_NAMES.astro])) {
+			} else if (
+				isRunnableDevEnvironment(server.environments[ASTRO_VITE_ENVIRONMENT_NAMES.astro])
+			) {
 				// When the ssr environment is not a RunnableDevEnvironment (e.g. when using the
 				// Cloudflare adapter which runs ssr in workerd), fall back to the 'astro' environment
 				// which is always a RunnableDevEnvironment available in dev.
-				environment = server.environments[ASTRO_VITE_ENVIRONMENT_NAMES.astro] as RunnableDevEnvironment;
+				environment = server.environments[
+					ASTRO_VITE_ENVIRONMENT_NAMES.astro
+				] as RunnableDevEnvironment;
 			}
 		},
 		transform: {
