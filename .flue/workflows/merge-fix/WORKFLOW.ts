@@ -98,9 +98,7 @@ export default async function mergeFix(flue: FlueClient, { prNumber }: v.InferOu
 	// Step 5: Post a summary comment on the PR
 	const summaryParts = [];
 	if (verifyResult.correctedFiles.length > 0) {
-		summaryParts.push(
-			`- Fixed conflict resolutions in: ${verifyResult.correctedFiles.join(', ')}`,
-		);
+		summaryParts.push(`- Fixed conflict resolutions in: ${verifyResult.correctedFiles.join(', ')}`);
 	}
 	if (fixResult.fixedFiles.length > 0) {
 		summaryParts.push(`- Fixed test failures in: ${fixResult.fixedFiles.join(', ')}`);

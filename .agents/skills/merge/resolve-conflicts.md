@@ -27,6 +27,7 @@ grep -r "<<<<<<< " --include="*.ts" --include="*.js" --include="*.mjs" --include
 ```
 
 If any exist, resolve them following these rules:
+
 - **Prefer `main` for bug fixes.** If `main` fixed a bug, that fix should carry over to `next`.
 - **Prefer `next` for API changes.** If `next` changed an API, keep the `next` version and adapt the `main` fix if needed.
 - When in doubt, prefer `next` — it's the forward-looking branch.
@@ -49,6 +50,7 @@ git diff origin/main -- <file>
 ```
 
 Look for:
+
 - **New dependencies** added on `main` that are missing from `next` — these should be added
 - **Dependency version bumps** on `main` that are higher than what's on `next` — these should typically be accepted (they're patches/minors)
 - **New scripts or config entries** added on `main` — these should be forward-ported
@@ -57,6 +59,7 @@ Look for:
 ### Step 3: Apply corrections
 
 If you find changes from `main` that should have been kept:
+
 1. Apply those specific changes to the current files
 2. Run `pnpm install --no-frozen-lockfile` if you modified any `package.json` files
 3. `git add` the modified files
