@@ -23,10 +23,7 @@ export const args = v.object({
 	prNumber: v.number(),
 });
 
-export default async function mergeFix(
-	flue: FlueClient,
-	{ prNumber }: v.InferOutput<typeof args>,
-) {
+export default async function mergeFix(flue: FlueClient, { prNumber }: v.InferOutput<typeof args>) {
 	const branch = 'ci/merge-main-to-next';
 
 	// Step 1: Check for merge conflicts (unresolved conflict markers in files)
@@ -67,10 +64,7 @@ export default async function mergeFix(
 	const fixResult = await flue.skill('merge/fix-tests.md', {
 		args: { prNumber },
 		result: v.object({
-			testsPass: v.pipe(
-				v.boolean(),
-				v.description('true if all tests pass after fixes'),
-			),
+			testsPass: v.pipe(v.boolean(), v.description('true if all tests pass after fixes')),
 			fixedFiles: v.pipe(
 				v.array(v.string()),
 				v.description('List of test files or source files that were modified to fix failures'),
@@ -126,18 +120,15 @@ ${summaryParts.join('\n')}
 ${fixResult.testsPass ? 'All tests pass — this PR should be ready for review.' : 'Some tests still fail — manual intervention may be needed.'}`;
 
 		const token = process.env.FREDKBOT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
-		await fetch(
-			`https://api.github.com/repos/withastro/astro/issues/${prNumber}/comments`,
-			{
-				method: 'POST',
-				headers: {
-					Authorization: `token ${token}`,
-					'Content-Type': 'application/json',
-					Accept: 'application/vnd.github+json',
-				},
-				body: JSON.stringify({ body: commentBody }),
+		await fetch(`https://api.github.com/repos/withastro/astro/issues/${prNumber}/comments`, {
+			method: 'POST',
+			headers: {
+				Authorization: `token ${token}`,
+				'Content-Type': 'application/json',
+				Accept: 'application/vnd.github+json',
 			},
-		);
+			body: JSON.stringify({ body: commentBody }),
+		});
 	}
 
 	return {

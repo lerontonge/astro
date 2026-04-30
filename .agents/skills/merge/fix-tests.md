@@ -30,6 +30,7 @@ gh run view <run-id> --log-failed
 ```
 
 Parse the output to identify:
+
 - Which test files failed
 - The specific test names that failed
 - The error messages and assertion diffs
@@ -55,12 +56,14 @@ For each failure:
 3. **Make the minimal fix** — only change what's needed to make the test pass
 
 **Fix principles:**
+
 - Keep changes minimal — only fix what CI reported as failing
 - Don't refactor unrelated code
 - Don't change test intent — only adapt expectations to the current branch state
 - If a test expectation needs updating (e.g., expected HTML output changed), update it to match the new correct output
 
 **What NOT to fix:**
+
 - Tests that were already failing on `next` before the merge — check with `git log origin/next -- <test-file>` if unsure
 - Smoke tests — these are allowed to fail
 - `astro check` failures — these are permitted to fail
@@ -96,6 +99,7 @@ pnpm install --no-frozen-lockfile
 ## Output
 
 Return:
+
 - Whether all identified test failures were fixed
 - List of files that were modified
 - List of any remaining failures that could not be fixed automatically (e.g., require deeper architectural understanding)

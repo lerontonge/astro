@@ -16,6 +16,7 @@ When `main` is merged into `next`, changeset files (`.changeset/*.md`) that were
 ## Steps
 
 1. **Identify stale changesets.** Compare the changeset files on this branch against what exists on `origin/next`:
+
    ```bash
    # List changeset .md files that are new (not in next already)
    git diff --name-only --diff-filter=A origin/next -- .changeset/
@@ -29,6 +30,7 @@ When `main` is merged into `next`, changeset files (`.changeset/*.md`) that were
 3. **Also check `pre.json`.** Read `.changeset/pre.json` if it exists. This file tracks the pre-release state. Ensure it does not reference any changesets that should be removed.
 
 4. **Remove stale changesets.** Delete the identified files:
+
    ```bash
    git rm .changeset/<stale-file>.md
    ```
