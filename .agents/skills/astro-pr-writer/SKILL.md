@@ -101,11 +101,13 @@ Explain docs impact clearly.
 Default to short. 1-2 bullets per section is normal — add more only when the change is genuinely complex. A reviewer scanning a PR queue should be able to read the whole body in under 30 seconds for a typical patch.
 
 **Too verbose:**
+
 > - Moves `.optional().prefault({})` outside `z.preprocess()` for the `server` config property in both `base.ts` and `relative.ts`, matching the `integrations` fix from #16531. Zod 4.4.0 rejects missing properties wrapped in `z.preprocess()` before the preprocessor or inner defaults can execute — moving `.optional().prefault({})` outside the preprocess call resolves this. Fixes the `server` property issue reported there by @rururux.
 > - Adds `invalid_key`, `invalid_element`, and discriminated union `options` handlers to both Astro and DB error maps for Zod 4.4.0 compatibility. Zod 4.4.0 surfaces record key refinement failures (e.g. env schema variable names) as structured `invalid_key` issues with nested errors instead of a flat message. The handlers extract the actual refinement message for clear user-facing errors.
 > - All changes are backward-compatible with Zod 4.3.x. New error map branches only activate on issue codes that 4.4.0 starts emitting.
 
 **Better:**
+
 > - Moves `.optional().prefault({})` outside `z.preprocess()` for the `server` config, matching the `integrations` fix from #16531. Fixes the issue reported there by @rururux.
 > - Adds `invalid_key`, `invalid_element`, and discriminated union `options` handlers to both error maps for Zod 4.4.0 compat.
 > - Backward-compatible with Zod 4.3.x.
