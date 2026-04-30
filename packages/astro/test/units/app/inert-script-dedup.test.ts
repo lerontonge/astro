@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { App } from '../../../dist/core/app/app.js';
 import { createRenderInstruction } from '../../../dist/runtime/server/render/instruction.js';
-import { createComponent, render, templateEnter, templateExit } from '../../../dist/runtime/server/index.js';
+import {
+	createComponent,
+	render,
+	templateEnter,
+	templateExit,
+} from '../../../dist/runtime/server/index.js';
 import { createManifest, createRouteInfo } from './test-helpers.ts';
 
 const hydrationRouteData = {
@@ -90,10 +95,7 @@ const pageMap = new Map([
 
 const app = new App(
 	createManifest({
-		routes: [
-			createRouteInfo(hydrationRouteData),
-			createRouteInfo(serverIslandRouteData),
-		],
+		routes: [createRouteInfo(hydrationRouteData), createRouteInfo(serverIslandRouteData)],
 		clientDirectives: new Map([['load', 'console.log("directive")']]),
 		pageMap: pageMap as any,
 	}) as any,
@@ -108,7 +110,9 @@ describe('Inert template script deduplication', () => {
 	});
 
 	it('does not consume server-island runtime dedup inside template content', async () => {
-		const response = await app.render(new Request('http://example.com/inert-server-island-runtime'));
+		const response = await app.render(
+			new Request('http://example.com/inert-server-island-runtime'),
+		);
 		const html = await response.text();
 
 		assert.equal(countOccurrences(html, 'replaceServerIsland('), 2);
