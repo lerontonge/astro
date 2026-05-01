@@ -209,8 +209,7 @@ describe('createI18nMiddleware', () => {
 			);
 			const ctx = createMockAPIContext({
 				url: 'http://localhost/it/about',
-				rewrite: async (_path: string) =>
-					new Response(`<h1>about page</h1>`, { status: 200 }),
+				rewrite: async (_path: string) => new Response(`<h1>about page</h1>`, { status: 200 }),
 			} as any);
 			const next = async () => makeFallbackSentinelResponse();
 
