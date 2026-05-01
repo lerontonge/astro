@@ -166,8 +166,8 @@ const sharpService: LocalImageService<SharpImageServiceConfig> = {
 			// formats, the image will be optimized automatically without code changes.
 			console.warn(
 				`⚠️  Astro could not optimize image "${transform.src}". ` +
-				`Sharp doesn't support this format. The image will be used unoptimized. ` +
-				`Consider converting to WebP or placing in the public/ folder.`
+					`Sharp doesn't support this format. The image will be used unoptimized. ` +
+					`Consider converting to WebP or placing in the public/ folder.`,
 			);
 			return { data: inputBuffer, format: transform.format };
 		}
