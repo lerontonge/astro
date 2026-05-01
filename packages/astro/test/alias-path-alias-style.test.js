@@ -24,11 +24,16 @@ describe('Style compilation with tsconfig path aliases', () => {
 		assert.ok($('.styled').length > 0, 'Styled component should be present in output');
 
 		// With inlineStylesheets: 'never', styles are emitted as external CSS files
-		const links = $('link[rel=stylesheet]').map((_i, el) => $(el).attr('href')).get();
+		const links = $('link[rel=stylesheet]')
+			.map((_i, el) => $(el).attr('href'))
+			.get();
 		assert.ok(links.length > 0, 'Should have at least one linked stylesheet');
 
 		const cssContents = await Promise.all(links.map((href) => fixture.readFile(href)));
 		const allCss = cssContents.join('\n');
-		assert.ok(allCss.includes('.styled'), 'Scoped .styled CSS should be present in emitted stylesheet');
+		assert.ok(
+			allCss.includes('.styled'),
+			'Scoped .styled CSS should be present in emitted stylesheet',
+		);
 	});
 });
