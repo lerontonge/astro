@@ -96,10 +96,7 @@ describe('pushDirective', () => {
 
 			const result = pushDirective(existing, incoming);
 
-			assert.deepStrictEqual(result, [
-				"img-src 'self'",
-				"connect-src 'self' 'unsafe-inline'",
-			]);
+			assert.deepStrictEqual(result, ["img-src 'self'", "connect-src 'self' 'unsafe-inline'"]);
 
 			for (const entry of result) {
 				if (directiveNameOf(entry) === 'connect-src') {
