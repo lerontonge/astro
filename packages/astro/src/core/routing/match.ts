@@ -48,5 +48,3 @@ export function isRoute404or500(route: RouteData): boolean {
 export function isRouteServerIsland(route: RouteData): boolean {
 	return route.component === SERVER_ISLAND_COMPONENT;
 }
-
-

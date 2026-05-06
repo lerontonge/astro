@@ -117,7 +117,7 @@ export function getFetchStateFromAPIContext(context: APIContext): FetchState {
 	const state = (context as any)[fetchStateSymbol] as FetchState | undefined;
 	if (!state) {
 		throw new Error(
-			'FetchState not found on APIContext. This is an internal error — the context was not created through Astro\'s request pipeline.',
+			"FetchState not found on APIContext. This is an internal error — the context was not created through Astro's request pipeline.",
 		);
 	}
 	return state;
@@ -831,8 +831,6 @@ export class FetchState implements AstroFetchState {
 			return pathname;
 		}
 	}
-
-
 
 	/**
 	 * Returns the resolved `props` for this render, computing them lazily

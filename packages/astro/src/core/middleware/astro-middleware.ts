@@ -16,10 +16,7 @@ import { sequence } from './index.js';
  * `handle` method (bound) so route dispatch logic stays out of the
  * middleware layer.
  */
-export type RenderRouteCallback = (
-	state: FetchState,
-	ctx: APIContext,
-) => Promise<Response>;
+export type RenderRouteCallback = (state: FetchState, ctx: APIContext) => Promise<Response>;
 
 /**
  * Handles the execution of Astro's middleware chain (internal + user) for a

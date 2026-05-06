@@ -103,10 +103,7 @@ export function applyRewriteToState(
  * and page dispatch to produce the new response.
  */
 export class Rewrites {
-	async execute(
-		state: FetchState,
-		payload: RewritePayload,
-	): Promise<Response> {
+	async execute(state: FetchState, payload: RewritePayload): Promise<Response> {
 		const pipeline = state.pipeline;
 		pipeline.logger.debug('router', 'Calling rewrite: ', payload);
 		const result = await pipeline.tryRewrite(payload, state.request);

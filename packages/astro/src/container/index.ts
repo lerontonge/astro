@@ -558,10 +558,7 @@ export class experimental_AstroContainer {
 		if (options.props) {
 			state.initialProps = options.props;
 		}
-		return this.#astroMiddleware.handle(
-			state,
-			this.#pagesHandler.handle.bind(this.#pagesHandler),
-		);
+		return this.#astroMiddleware.handle(state, this.#pagesHandler.handle.bind(this.#pagesHandler));
 	}
 
 	/**

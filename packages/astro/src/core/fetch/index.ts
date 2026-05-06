@@ -175,10 +175,7 @@ const cacheHandlers = new WeakMap<BaseApp<Pipeline>, CacheHandler>();
  * no-cache case transparently. Cache headers are applied and stripped
  * internally.
  */
-export function cache(
-	state: FetchState,
-	next: () => Promise<Response>,
-): Promise<Response> {
+export function cache(state: FetchState, next: () => Promise<Response>): Promise<Response> {
 	const app = getApp(state.request);
 	let handler = cacheHandlers.get(app);
 	if (!handler) {

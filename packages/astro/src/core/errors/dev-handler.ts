@@ -50,9 +50,7 @@ export class DevErrorHandler implements ErrorHandler {
 		// we always throw when we have Astro errors around the middleware
 		if (
 			isAstroError(error) &&
-			[MiddlewareNoDataOrNextCalled.name, MiddlewareNotAResponse.name].includes(
-				(error as any).name,
-			)
+			[MiddlewareNoDataOrNextCalled.name, MiddlewareNotAResponse.name].includes((error as any).name)
 		) {
 			throw error;
 		}
@@ -81,10 +79,7 @@ export class DevErrorHandler implements ErrorHandler {
 
 				if (error) {
 					// Log useful information that the custom 500 page may not display unlike the default error overlay
-					app.logger.error(
-						'router',
-						(error as AstroError).stack || (error as AstroError).message,
-					);
+					app.logger.error('router', (error as AstroError).stack || (error as AstroError).message);
 				}
 
 				return response;

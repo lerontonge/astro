@@ -10,12 +10,12 @@ Each handler has a corresponding bitmask flag in `PipelineFeatures` (`packages/a
 
 ```ts
 export const PipelineFeatures = {
-  redirects:  1 << 0,
-  sessions:   1 << 1,
-  actions:    1 << 2,
+  redirects: 1 << 0,
+  sessions: 1 << 1,
+  actions: 1 << 2,
   middleware: 1 << 3,
-  i18n:       1 << 4,
-  cache:      1 << 5,
+  i18n: 1 << 4,
+  cache: 1 << 5,
 } as const;
 ```
 
@@ -40,6 +40,7 @@ Features that are always included (like page rendering) or that fail loudly on t
 ## How to add a new check
 
 1. **Add a flag to `PipelineFeatures`** in `packages/astro/src/core/base-pipeline.ts`:
+
    ```ts
    export const PipelineFeatures = {
      // ... existing flags
@@ -48,6 +49,7 @@ Features that are always included (like page rendering) or that fail loudly on t
    ```
 
 2. **Set the flag in your handler** when it runs:
+
    ```ts
    pipeline.usedFeatures |= PipelineFeatures.myFeature;
    ```

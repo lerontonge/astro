@@ -29,10 +29,17 @@ const { title } = Astro.props;
 </html>
 
 <style>
-	:global(*) { margin: 0; padding: 0; box-sizing: border-box; }
+	:global(*) {
+		margin: 0;
+		padding: 0;
+		box-sizing: border-box;
+	}
 
 	:global(body) {
-		font-family: system-ui, -apple-system, sans-serif;
+		font-family:
+			system-ui,
+			-apple-system,
+			sans-serif;
 		background: #0f1117;
 		color: #e1e4ed;
 		min-height: 100vh;
@@ -65,7 +72,9 @@ const { title } = Astro.props;
 		transition: color 0.15s;
 	}
 
-	nav a:hover { color: #e1e4ed; }
+	nav a:hover {
+		color: #e1e4ed;
+	}
 
 	main {
 		max-width: 48rem;

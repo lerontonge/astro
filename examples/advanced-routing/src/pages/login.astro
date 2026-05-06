@@ -13,14 +13,20 @@ if (result && !result.error) {
 	{result?.error && <p class="error">Login failed. Please try again.</p>}
 	<p>You were redirected here because you don't have a session cookie.</p>
 	<p>
-		The auth middleware in <code>src/app.ts</code> runs <em>before</em> <code>astro()</code>,
-		so the dashboard page is never even rendered for unauthenticated requests.
+		The auth middleware in <code>src/app.ts</code> runs <em>before</em>
+		<code>astro()</code>, so the dashboard page is never even rendered for unauthenticated requests.
 	</p>
 	<div class="form-card">
 		<form method="POST" action={actions.login.queryString}>
 			<div class="field">
 				<label for="email">Email</label>
-				<input type="email" id="email" name="email" placeholder="you@example.com" value="user@example.com" />
+				<input
+					type="email"
+					id="email"
+					name="email"
+					placeholder="you@example.com"
+					value="user@example.com"
+				/>
 			</div>
 			<div class="field">
 				<label for="password">Password</label>
@@ -83,7 +89,9 @@ if (result && !result.error) {
 		transition: border-color 0.15s;
 	}
 
-	input:focus { border-color: #6366f1; }
+	input:focus {
+		border-color: #6366f1;
+	}
 
 	button {
 		padding: 0.5rem 1rem;
@@ -97,5 +105,7 @@ if (result && !result.error) {
 		transition: background 0.15s;
 	}
 
-	button:hover { background: #818cf8; }
+	button:hover {
+		background: #818cf8;
+	}
 </style>

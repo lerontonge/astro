@@ -55,9 +55,7 @@ export function vitePluginFetchable({ settings }: { settings: AstroSettings }): 
 					const environment = server.environments[name];
 					if (!environment) continue;
 
-					const virtualMod = environment.moduleGraph.getModuleById(
-						FETCHABLE_RESOLVED_MODULE_ID,
-					);
+					const virtualMod = environment.moduleGraph.getModuleById(FETCHABLE_RESOLVED_MODULE_ID);
 					if (virtualMod) {
 						environment.moduleGraph.invalidateModule(virtualMod);
 					}
@@ -69,9 +67,7 @@ export function vitePluginFetchable({ settings }: { settings: AstroSettings }): 
 				id: new RegExp(`^${FETCHABLE_MODULE_ID}$`),
 			},
 			async handler() {
-				const resolved = await this.resolve(
-					`${normalizedSrcDir}${APP_PATH_SEGMENT_NAME}`,
-				);
+				const resolved = await this.resolve(`${normalizedSrcDir}${APP_PATH_SEGMENT_NAME}`);
 				userAppPresent = advancedRoutingEnabled && !!resolved;
 				resolvedUserAppId = resolved?.id;
 				return FETCHABLE_RESOLVED_MODULE_ID;

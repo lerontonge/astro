@@ -1,7 +1,4 @@
-import {
-	INTERNAL_RESPONSE_HEADERS,
-	responseSentSymbol,
-} from '../constants.js';
+import { INTERNAL_RESPONSE_HEADERS, responseSentSymbol } from '../constants.js';
 import { getSetCookiesFromResponse } from '../cookies/index.js';
 
 /**

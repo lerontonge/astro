@@ -28,7 +28,10 @@ function createState(
 	return state;
 }
 
-function makeTryRewriteResult(routeConfig: Parameters<typeof createRouteData>[0], pathname: string) {
+function makeTryRewriteResult(
+	routeConfig: Parameters<typeof createRouteData>[0],
+	pathname: string,
+) {
 	return {
 		routeData: createRouteData(routeConfig),
 		componentInstance: {} as any,
@@ -41,10 +44,7 @@ function makeTryRewriteResult(routeConfig: Parameters<typeof createRouteData>[0]
 
 describe('applyRewriteToState', () => {
 	it('updates routeData to the rewrite target', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		const target = makeTryRewriteResult({ route: '/target' }, '/target');
 
 		applyRewriteToState(state, '/target', target);
@@ -53,10 +53,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('updates pathname to the rewrite target', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		const target = makeTryRewriteResult({ route: '/target' }, '/target');
 
 		applyRewriteToState(state, '/target', target);
@@ -65,10 +62,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('updates params from the new route', () => {
-		const state = createState(
-			new Request('http://example.com/'),
-			{ route: '/' },
-		);
+		const state = createState(new Request('http://example.com/'), { route: '/' });
 		const target = makeTryRewriteResult(
 			{
 				route: '/blog/[id]',
@@ -84,10 +78,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('sets isRewriting to true', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		assert.equal(state.isRewriting, false);
 
 		const target = makeTryRewriteResult({ route: '/target' }, '/target');
@@ -97,10 +88,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('resets status to 200', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		state.status = 404;
 
 		const target = makeTryRewriteResult({ route: '/target' }, '/target');
@@ -110,10 +98,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('uses the Request directly when payload is a Request', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		const newRequest = new Request('http://example.com/target');
 		const target = makeTryRewriteResult({ route: '/target' }, '/target');
 
@@ -123,10 +108,7 @@ describe('applyRewriteToState', () => {
 	});
 
 	it('invalidates cached contexts after rewrite', () => {
-		const state = createState(
-			new Request('http://example.com/source'),
-			{ route: '/source' },
-		);
+		const state = createState(new Request('http://example.com/source'), { route: '/source' });
 		// Simulate cached contexts
 		state.props = { cached: true };
 		state.actionApiContext = {} as any;
@@ -146,10 +128,7 @@ describe('applyRewriteToState', () => {
 			{ route: '/source', prerender: false },
 			{ serverLike: true },
 		);
-		const target = makeTryRewriteResult(
-			{ route: '/static', prerender: true },
-			'/static',
-		);
+		const target = makeTryRewriteResult({ route: '/static', prerender: true }, '/static');
 
 		assert.throws(
 			() => applyRewriteToState(state, '/static', target),
@@ -254,9 +233,7 @@ describe('Rewrites.execute()', () => {
 	});
 
 	it('returns 404 when rewrite target does not match any route', async () => {
-		const app = createTestApp([
-			createPage(simplePage, { route: '/source' }),
-		]);
+		const app = createTestApp([createPage(simplePage, { route: '/source' })]);
 		const state = createFetchState(app, 'http://example.com/source');
 
 		const rewrites = new Rewrites();

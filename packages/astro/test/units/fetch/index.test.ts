@@ -113,9 +113,7 @@ describe('redirects()', () => {
 	});
 
 	it('returns a redirect response when the route is a redirect', async () => {
-		const app = createTestApp([
-			createRedirect({ route: '/old', redirect: '/new' }),
-		]);
+		const app = createTestApp([createRedirect({ route: '/old', redirect: '/new' })]);
 		const request = stampApp(new Request('http://example.com/old'), app);
 		const state = new FetchState(request);
 
@@ -216,9 +214,12 @@ describe('pages()', () => {
 	it('renders an endpoint', async () => {
 		const app = createTestApp([
 			createEndpoint(
-				{ GET: () => new Response(JSON.stringify({ ok: true }), {
-					headers: { 'Content-Type': 'application/json' },
-				}) },
+				{
+					GET: () =>
+						new Response(JSON.stringify({ ok: true }), {
+							headers: { 'Content-Type': 'application/json' },
+						}),
+				},
 				{ route: '/api/health' },
 			),
 		]);
@@ -235,15 +236,9 @@ describe('pages()', () => {
 
 	it('returns 404 for an endpoint with no matching method handler', async () => {
 		const app = createTestApp([
-			createEndpoint(
-				{ GET: () => new Response('ok') },
-				{ route: '/api/health' },
-			),
+			createEndpoint({ GET: () => new Response('ok') }, { route: '/api/health' }),
 		]);
-		const request = stampApp(
-			new Request('http://example.com/api/health', { method: 'POST' }),
-			app,
-		);
+		const request = stampApp(new Request('http://example.com/api/health', { method: 'POST' }), app);
 		const state = new FetchState(request);
 
 		const response = await pages(state);
@@ -269,20 +264,17 @@ describe('i18n()', () => {
 	});
 
 	it('redirects to the default locale when prefix-always and no locale in path', async () => {
-		const app = createTestApp(
-			[createPage(simplePage, { route: '/' })],
-			{
-				i18n: {
-					defaultLocale: 'en',
-					locales: ['en', 'fr'],
-					strategy: 'pathname-prefix-always',
-					fallbackType: 'rewrite',
-					fallback: {},
-					domains: {},
-					domainLookupTable: {},
-				},
+		const app = createTestApp([createPage(simplePage, { route: '/' })], {
+			i18n: {
+				defaultLocale: 'en',
+				locales: ['en', 'fr'],
+				strategy: 'pathname-prefix-always',
+				fallbackType: 'rewrite',
+				fallback: {},
+				domains: {},
+				domainLookupTable: {},
 			},
-		);
+		});
 		const request = stampApp(new Request('http://example.com/about'), app);
 		const state = new FetchState(request);
 
@@ -295,20 +287,17 @@ describe('i18n()', () => {
 	});
 
 	it('passes through the response for a valid locale path', async () => {
-		const app = createTestApp(
-			[createPage(simplePage, { route: '/en' })],
-			{
-				i18n: {
-					defaultLocale: 'en',
-					locales: ['en', 'fr'],
-					strategy: 'pathname-prefix-always',
-					fallbackType: 'rewrite',
-					fallback: {},
-					domains: {},
-					domainLookupTable: {},
-				},
+		const app = createTestApp([createPage(simplePage, { route: '/en' })], {
+			i18n: {
+				defaultLocale: 'en',
+				locales: ['en', 'fr'],
+				strategy: 'pathname-prefix-always',
+				fallbackType: 'rewrite',
+				fallback: {},
+				domains: {},
+				domainLookupTable: {},
 			},
-		);
+		});
 		const request = stampApp(new Request('http://example.com/en/about'), app);
 		const state = new FetchState(request);
 
@@ -322,20 +311,17 @@ describe('i18n()', () => {
 	});
 
 	it('passes through non-page responses unchanged even with i18n configured', async () => {
-		const app = createTestApp(
-			[createPage(simplePage, { route: '/' })],
-			{
-				i18n: {
-					defaultLocale: 'en',
-					locales: ['en', 'fr'],
-					strategy: 'pathname-prefix-always',
-					fallbackType: 'rewrite',
-					fallback: {},
-					domains: {},
-					domainLookupTable: {},
-				},
+		const app = createTestApp([createPage(simplePage, { route: '/' })], {
+			i18n: {
+				defaultLocale: 'en',
+				locales: ['en', 'fr'],
+				strategy: 'pathname-prefix-always',
+				fallbackType: 'rewrite',
+				fallback: {},
+				domains: {},
+				domainLookupTable: {},
 			},
-		);
+		});
 		const request = stampApp(new Request('http://example.com/api/data'), app);
 		const state = new FetchState(request);
 
@@ -379,10 +365,9 @@ describe('astro() combined handler', () => {
 	});
 
 	it('applies trailing slash redirect before rendering', async () => {
-		const app = createTestApp(
-			[createPage(simplePage, { route: '/about' })],
-			{ trailingSlash: 'always' },
-		);
+		const app = createTestApp([createPage(simplePage, { route: '/about' })], {
+			trailingSlash: 'always',
+		});
 		const request = stampApp(new Request('http://example.com/about'), app);
 		const state = new FetchState(request);
 
@@ -394,13 +379,15 @@ describe('astro() combined handler', () => {
 
 	it('runs middleware when configured', async () => {
 		const app = createTestApp(
-			[createPage(
-				createComponent((result: any, props: any, slots: any) => {
-					const Astro = result.createAstro(props, slots);
-					return render`<p>${Astro.locals.from}</p>`;
-				}),
-				{ route: '/' },
-			)],
+			[
+				createPage(
+					createComponent((result: any, props: any, slots: any) => {
+						const Astro = result.createAstro(props, slots);
+						return render`<p>${Astro.locals.from}</p>`;
+					}),
+					{ route: '/' },
+				),
+			],
 			{
 				middleware: async () => ({
 					onRequest: async (ctx: any, next: any) => {

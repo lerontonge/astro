@@ -2,9 +2,7 @@ import type { BaseApp, RenderErrorOptions } from '../app/base.js';
 import type { Pipeline } from '../base-pipeline.js';
 import { FetchState } from '../fetch/fetch-state.js';
 import { prepareResponse } from '../app/prepare-response.js';
-import {
-	attachCookiesToResponse,
-} from '../cookies/index.js';
+import { attachCookiesToResponse } from '../cookies/index.js';
 import { getCookiesFromResponse } from '../cookies/response.js';
 import { AstroMiddleware } from '../middleware/astro-middleware.js';
 import { PagesHandler } from '../pages/handler.js';
@@ -56,10 +54,7 @@ export class DefaultErrorHandler implements ErrorHandler {
 		if (errorRouteData) {
 			if (errorRouteData.prerender) {
 				const maybeDotHtml = errorRouteData.route.endsWith(`/${status}`) ? '.html' : '';
-				const statusURL = new URL(
-					`${app.baseWithoutTrailingSlash}/${status}${maybeDotHtml}`,
-					url,
-				);
+				const statusURL = new URL(`${app.baseWithoutTrailingSlash}/${status}${maybeDotHtml}`, url);
 				if (
 					statusURL.toString() !== request.url &&
 					resolvedRenderOptions.prerenderedErrorPageFetch

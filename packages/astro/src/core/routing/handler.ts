@@ -25,10 +25,7 @@ export class AstroHandler {
 	#pagesHandler: PagesHandler;
 	#cacheHandler: CacheHandler;
 	/** Bound callback for the middleware chain — created once, reused per request. */
-	#renderRouteCallback: (
-		state: FetchState,
-		ctx: APIContext,
-	) => Promise<Response>;
+	#renderRouteCallback: (state: FetchState, ctx: APIContext) => Promise<Response>;
 	/**
 	 * i18n post-processor. Only set when the app has i18n configured and
 	 * the strategy is not `manual` — for the manual strategy users wire
@@ -63,16 +60,11 @@ export class AstroHandler {
 	 * middleware chain. Bound once in the constructor to avoid
 	 * per-request closure allocation.
 	 */
-	#actionsAndPages(
-		state: FetchState,
-		ctx: APIContext,
-	): Promise<Response> {
+	#actionsAndPages(state: FetchState, ctx: APIContext): Promise<Response> {
 		if (!state.skipMiddleware) {
 			const actionResult = this.#actionHandler.handle(ctx, state);
 			if (actionResult) {
-				return actionResult.then(
-					(response) => response ?? this.#pagesHandler.handle(state, ctx),
-				);
+				return actionResult.then((response) => response ?? this.#pagesHandler.handle(state, ctx));
 			}
 		}
 		return this.#pagesHandler.handle(state, ctx);

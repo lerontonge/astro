@@ -534,11 +534,7 @@ export abstract class BaseApp<P extends Pipeline = AppPipeline> {
 		if (manifest.middleware && !(used & PipelineFeatures.middleware)) {
 			missing.push('middleware');
 		}
-		if (
-			manifest.i18n &&
-			manifest.i18n.strategy !== 'manual' &&
-			!(used & PipelineFeatures.i18n)
-		) {
+		if (manifest.i18n && manifest.i18n.strategy !== 'manual' && !(used & PipelineFeatures.i18n)) {
 			missing.push('i18n');
 		}
 		if (manifest.cacheConfig && !(used & PipelineFeatures.cache)) {
