@@ -40,10 +40,7 @@ export default async function mergeFix({ init, payload }: FlueContext) {
 		args: { prNumber, ciLogs },
 		commands: [gh, git, pnpm, node],
 		result: v.object({
-			ciPass: v.pipe(
-				v.boolean(),
-				v.description('true if build + tests pass after fixes'),
-			),
+			ciPass: v.pipe(v.boolean(), v.description('true if build + tests pass after fixes')),
 			fixedFiles: v.pipe(
 				v.array(v.string()),
 				v.description('List of source or test files that were modified to fix failures'),
