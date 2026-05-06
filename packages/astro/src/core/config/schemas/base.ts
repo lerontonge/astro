@@ -309,9 +309,7 @@ export const AstroConfigSchema = z.object({
 					config: z.record(z.string(), z.any()).default({}),
 				})
 				.default(ASTRO_CONFIG_DEFAULTS.image.service),
-			dangerouslyProcessSVG: z
-				.boolean()
-				.default(ASTRO_CONFIG_DEFAULTS.image.dangerouslyProcessSVG),
+			dangerouslyProcessSVG: z.boolean().default(ASTRO_CONFIG_DEFAULTS.image.dangerouslyProcessSVG),
 			domains: z.array(z.string()).default([]),
 			remotePatterns: z
 				.array(

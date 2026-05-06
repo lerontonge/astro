@@ -172,11 +172,7 @@ describe('sharp image service SVG handling', async () => {
 
 	it('rejects SVG sources that would be rasterized without dangerouslyProcessSVG', async () => {
 		await assert.rejects(
-			sharpService.transform(
-				SVG_BUFFER,
-				{ src: 'icon.svg', format: 'webp' } as any,
-				makeConfig(),
-			),
+			sharpService.transform(SVG_BUFFER, { src: 'icon.svg', format: 'webp' } as any, makeConfig()),
 			/SVG image processing is disabled/,
 		);
 	});
