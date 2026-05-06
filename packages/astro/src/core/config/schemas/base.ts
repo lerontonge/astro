@@ -74,6 +74,7 @@ export const ASTRO_CONFIG_DEFAULTS = {
 	image: {
 		endpoint: { entrypoint: undefined, route: '/_image' },
 		service: { entrypoint: 'astro/assets/services/sharp', config: {} },
+		dangerouslyProcessSVG: false,
 		responsiveStyles: false,
 	},
 	devToolbar: {
@@ -308,6 +309,9 @@ export const AstroConfigSchema = z.object({
 					config: z.record(z.string(), z.any()).default({}),
 				})
 				.default(ASTRO_CONFIG_DEFAULTS.image.service),
+			dangerouslyProcessSVG: z
+				.boolean()
+				.default(ASTRO_CONFIG_DEFAULTS.image.dangerouslyProcessSVG),
 			domains: z.array(z.string()).default([]),
 			remotePatterns: z
 				.array(
