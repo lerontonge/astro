@@ -1865,6 +1865,8 @@ export interface AstroUserConfig<
 		 * `pathname` patterns:
 		 *   - End with `/**` to allow all sub-routes (like `startsWith`).
 		 *   - End with `/*` to allow only one level of sub-route.
+		 * 
+		 * HTTP redirects are also followed when an image URL matches a remote pattern. The final destination URL must be among the allowed remote patterns to be loaded.
 
 		 */
 		remotePatterns?: Partial<RemotePattern>[];
